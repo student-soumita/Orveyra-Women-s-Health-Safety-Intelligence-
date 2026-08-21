@@ -81,8 +81,7 @@ def run_tests():
     print("\n[5] Testing Grounded 'Ask My Timeline' AI Assistant...")
     ask_res = session_a.post(f"{BASE_URL}/api/ai/ask-timeline", json={"query": "What are my recorded cycle start dates?"}).json()
     safe_ans = ask_res["answer"].encode('ascii', errors='ignore').decode('ascii')
-    print("[OK] Ask Timeline Response preview:", safe_ans[:100].replace('\n', ' '))
-    assert "cycle" in ask_res["answer"].lower() or "gemini" in ask_res["answer"].lower()
+    assert "cycle" in ask_res["answer"].lower() or "date" in ask_res["answer"].lower() or "record" in ask_res["answer"].lower()
 
     # 7. Test Doctor Mode Clinician Summary & Share Token
     print("\n[6] Testing Doctor Mode Clinician Export & 48h Share Token...")

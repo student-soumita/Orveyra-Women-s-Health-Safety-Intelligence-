@@ -27,20 +27,20 @@ class BodyDriftEngine:
                 if 15 <= diff <= 60: # Filter realistic cycle length bounds
                     cycle_lengths.append(diff)
 
-        avg_cycle = float(np.mean(cycle_lengths)) if cycle_lengths else 28.0
-        std_cycle = float(np.std(cycle_lengths)) if len(cycle_lengths) >= 3 else 2.0
+        avg_cycle = float(np.mean(cycle_lengths)) if cycle_lengths else None
+        std_cycle = float(np.std(cycle_lengths)) if len(cycle_lengths) >= 2 else (0.0 if cycle_lengths else None)
 
         # 2. Sleep & Lifestyle Baseline
         sleep_vals = [l['sleep_hours'] for l in lifestyle if l.get('sleep_hours') is not None]
-        avg_sleep = float(np.mean(sleep_vals)) if sleep_vals else 7.5
-        std_sleep = float(np.std(sleep_vals)) if len(sleep_vals) >= 3 else 0.8
+        avg_sleep = float(np.mean(sleep_vals)) if sleep_vals else None
+        std_sleep = float(np.std(sleep_vals)) if len(sleep_vals) >= 2 else (0.0 if sleep_vals else None)
 
         stress_vals = [l['stress_level'] for l in lifestyle if l.get('stress_level') is not None]
-        avg_stress = float(np.mean(stress_vals)) if stress_vals else 4.0
+        avg_stress = float(np.mean(stress_vals)) if stress_vals else None
 
         # 3. Symptom Baseline (Average severity per logged entry)
         severities = [s['severity'] for s in symptoms if s.get('severity') is not None]
-        avg_symptom_severity = float(np.mean(severities)) if severities else 3.5
+        avg_symptom_severity = float(np.mean(severities)) if severities else None
 
         # 4. Biomarker Baselines
         biomarker_baselines = {}
@@ -53,27 +53,27 @@ class BodyDriftEngine:
         biomarker_summary = {}
         for name, vals in biomarker_baselines.items():
             biomarker_summary[name] = {
-                "mean": float(np.mean(vals)),
+                "mean": round(float(np.mean(vals)), 1),
                 "latest": vals[-1],
                 "count": len(vals)
             }
 
         return {
             "cycle": {
-                "avg_length": round(avg_cycle, 1),
-                "std_dev": round(std_cycle, 1),
+                "avg_length": round(avg_cycle, 1) if avg_cycle is not None else None,
+                "std_dev": round(std_cycle, 1) if std_cycle is not None else None,
                 "logged_count": len(cycles)
             },
             "sleep": {
-                "avg_hours": round(avg_sleep, 1),
-                "std_dev": round(std_sleep, 1),
+                "avg_hours": round(avg_sleep, 1) if avg_sleep is not None else None,
+                "std_dev": round(std_sleep, 1) if std_sleep is not None else None,
                 "logged_count": len(sleep_vals)
             },
             "stress": {
-                "avg_level": round(avg_stress, 1)
+                "avg_level": round(avg_stress, 1) if avg_stress is not None else None
             },
             "symptoms": {
-                "avg_severity": round(avg_symptom_severity, 1),
+                "avg_severity": round(avg_symptom_severity, 1) if avg_symptom_severity is not None else None,
                 "total_logged": len(symptoms)
             },
             "biomarkers": biomarker_summary
@@ -96,7 +96,7 @@ class BodyDriftEngine:
                 "drift_detected": False,
                 "banner_title": "INSUFFICIENT DATA FOR BASELINE",
                 "signal_quality": "INSUFFICIENT DATA",
-                "personal_baselines": cls.calculate_personal_baselines([], [], [], []),
+                "personal_baselines": cls.calculate_personal_baselines(cycles, symptoms, lifestyle, biomarkers),
                 "statistical_flags": [],
                 "missing_context": [
                     "Need at least 2 logged cycles to establish cycle stability baseline.",

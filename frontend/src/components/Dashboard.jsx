@@ -29,6 +29,44 @@ export default function Dashboard({
   const bannerTitle = aiExplanation.banner_title || driftOutput.banner_title || "STABLE BASELINE"
   const signalQuality = aiExplanation.signal_quality || driftOutput.signal_quality || "INSUFFICIENT DATA"
 
+  // Direct authoritative calculations from user's actual database records
+  const sleepEntries = lifestyle.filter(l => l.sleep_hours != null && !isNaN(l.sleep_hours))
+  const calculatedSleepAvg = sleepEntries.length > 0 
+    ? (sleepEntries.reduce((acc, curr) => acc + Number(curr.sleep_hours), 0) / sleepEntries.length).toFixed(1)
+    : null
+
+  const symptomEntries = symptoms.filter(s => s.severity != null && !isNaN(s.severity))
+  const calculatedSymptomAvg = symptomEntries.length > 0
+    ? (symptomEntries.reduce((acc, curr) => acc + Number(curr.severity), 0) / symptomEntries.length).toFixed(1)
+    : null
+
+  let calculatedCycleAvg = null
+  let calculatedCycleStdDev = null
+  if (cycles.length >= 2) {
+    const sortedCycles = [...cycles].sort((a, b) => new Date(a.start_date) - new Date(b.start_date))
+    const diffs = []
+    for (let i = 1; i < sortedCycles.length; i++) {
+      const d1 = new Date(sortedCycles[i-1].start_date)
+      const d2 = new Date(sortedCycles[i].start_date)
+      const diffDays = Math.round((d2 - d1) / (1000 * 60 * 60 * 24))
+      if (diffDays >= 15 && diffDays <= 60) diffs.push(diffDays)
+    }
+    if (diffs.length > 0) {
+      calculatedCycleAvg = (diffs.reduce((a, b) => a + b, 0) / diffs.length).toFixed(1)
+      if (diffs.length >= 2) {
+        const mean = Number(calculatedCycleAvg)
+        const variance = diffs.reduce((acc, val) => acc + Math.pow(val - mean, 2), 0) / diffs.length
+        calculatedCycleStdDev = Math.sqrt(variance).toFixed(1)
+      }
+    }
+  }
+
+  const finalCycleAvg = (baselines.cycle?.avg_length != null && cycles.length >= 2) ? baselines.cycle.avg_length : calculatedCycleAvg
+  const finalCycleStdDev = baselines.cycle?.std_dev != null ? baselines.cycle.std_dev : calculatedCycleStdDev
+  const finalSleepAvg = baselines.sleep?.avg_hours != null ? baselines.sleep.avg_hours : calculatedSleepAvg
+  const finalSleepStdDev = baselines.sleep?.std_dev != null ? baselines.sleep.std_dev : null
+  const finalSymptomAvg = baselines.symptoms?.avg_severity != null ? baselines.symptoms.avg_severity : calculatedSymptomAvg
+
   const handleSeedSampleData = async () => {
     setLoadingSeed(true)
     try {
@@ -45,13 +83,20 @@ export default function Dashboard({
   }
 
   const handleClearAllData = async () => {
-    if (!window.confirm("Clear all health logs and reset to empty baseline?")) return
+    if (!window.confirm("Are you sure you want to clear all health telemetry logs and reset to an empty baseline?")) return
     setLoadingSeed(true)
     try {
-      await fetch('/api/logs/clear-all', { method: 'DELETE' })
-      onRefreshData()
+      const res = await fetch('/api/logs/clear-all', { method: 'DELETE' })
+      if (!res.ok) {
+        const data = await res.json()
+        throw new Error(data.detail || "Failed to clear logs")
+      }
+      setSeedSuccessMsg("Health telemetry reset! All logs cleared and baseline matrix reset.")
+      setTimeout(() => setSeedSuccessMsg(null), 4000)
+      if (onRefreshData) onRefreshData()
     } catch (err) {
       console.error("Clear error:", err)
+      alert("Error resetting data: " + err.message)
     } finally {
       setLoadingSeed(false)
     }
@@ -253,65 +298,118 @@ export default function Dashboard({
           </div>
         )}
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          
-          {/* Cycle Baseline */}
-          <div className="p-4 rounded-xl bg-amethyst-950/70 border border-amethyst-800/60 space-y-1">
-            <div className="flex items-center justify-between text-xs text-slate-400">
-              <span>Cycle Stability</span>
-              <Calendar className="w-4 h-4 text-rosegold-400" />
+        {cycles.length + symptoms.length + lifestyle.length + biomarkers.length === 0 ? (
+          <div className="p-8 text-center border border-dashed border-amethyst-800/80 rounded-xl bg-amethyst-950/40 space-y-3">
+            <div className="w-12 h-12 rounded-xl bg-amethyst-900/60 border border-amethyst-800 flex items-center justify-center mx-auto text-slate-400">
+              <Activity className="w-6 h-6 text-amethyst-400 animate-pulse" />
             </div>
-            <div className="text-2xl font-extrabold text-slate-100">
-              {baselines.cycle?.avg_length || profile?.typical_cycle_length || 28} <span className="text-xs text-slate-400 font-normal">days</span>
+            <div className="space-y-1 max-w-md mx-auto">
+              <h3 className="text-sm font-bold text-slate-200">Baseline Matrix Empty (0 Entries Recorded)</h3>
+              <p className="text-xs text-slate-400">
+                No personal baseline data logged yet. Start recording your health telemetry or load sample data to establish your baseline matrix.
+              </p>
             </div>
-            <p className="text-[11px] text-slate-400">
-              Std Dev: ±{baselines.cycle?.std_dev || 2.0} days • {cycles.length} cycles logged
-            </p>
+            <div className="flex flex-wrap items-center justify-center gap-3 pt-1">
+              <button
+                onClick={onOpenQuickLog}
+                className="px-4 py-2 rounded-xl bg-gradient-to-r from-amethyst-600 to-rosegold-600 hover:from-amethyst-500 hover:to-rosegold-500 text-white text-xs font-bold transition-all shadow-md flex items-center gap-1.5 glow-rose"
+              >
+                <PlusCircle className="w-4 h-4" />
+                <span>Log First Entry</span>
+              </button>
+              <button
+                onClick={handleSeedSampleData}
+                disabled={loadingSeed}
+                className="px-4 py-2 rounded-xl bg-amethyst-800 hover:bg-amethyst-700 border border-amethyst-600/60 text-rosegold-300 text-xs font-bold transition-all flex items-center gap-1.5 shadow"
+              >
+                <Database className="w-4 h-4 text-rosegold-400" />
+                <span>{loadingSeed ? 'Loading...' : 'Load Sample Data'}</span>
+              </button>
+            </div>
           </div>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            
+            {/* Cycle Baseline */}
+            <div className="p-4 rounded-xl bg-amethyst-950/70 border border-amethyst-800/60 space-y-1">
+              <div className="flex items-center justify-between text-xs text-slate-400">
+                <span>Cycle Stability</span>
+                <Calendar className="w-4 h-4 text-rosegold-400" />
+              </div>
+              <div className="text-2xl font-extrabold text-slate-100">
+                {finalCycleAvg != null ? (
+                  <>
+                    {finalCycleAvg} <span className="text-xs text-slate-400 font-normal">days</span>
+                  </>
+                ) : (
+                  <span className="text-slate-500 font-bold">--</span>
+                )}
+              </div>
+              <p className="text-[11px] text-slate-400">
+                {finalCycleStdDev != null
+                  ? `Std Dev: ±${finalCycleStdDev} days • ${cycles.length} cycles logged`
+                  : `${cycles.length} cycles logged`}
+              </p>
+            </div>
 
-          {/* Sleep Baseline */}
-          <div className="p-4 rounded-xl bg-amethyst-950/70 border border-amethyst-800/60 space-y-1">
-            <div className="flex items-center justify-between text-xs text-slate-400">
-              <span>Sleep Duration</span>
-              <Moon className="w-4 h-4 text-amethyst-400" />
+            {/* Sleep Baseline */}
+            <div className="p-4 rounded-xl bg-amethyst-950/70 border border-amethyst-800/60 space-y-1">
+              <div className="flex items-center justify-between text-xs text-slate-400">
+                <span>Sleep Duration</span>
+                <Moon className="w-4 h-4 text-amethyst-400" />
+              </div>
+              <div className="text-2xl font-extrabold text-slate-100">
+                {finalSleepAvg != null ? (
+                  <>
+                    {finalSleepAvg} <span className="text-xs text-slate-400 font-normal">hrs/night</span>
+                  </>
+                ) : (
+                  <span className="text-slate-500 font-bold">--</span>
+                )}
+              </div>
+              <p className="text-[11px] text-slate-400">
+                {finalSleepStdDev != null
+                  ? `Std Dev: ±${finalSleepStdDev} hrs • ${lifestyle.length} nights`
+                  : `${lifestyle.length} nights recorded`}
+              </p>
             </div>
-            <div className="text-2xl font-extrabold text-slate-100">
-              {baselines.sleep?.avg_hours || 7.5} <span className="text-xs text-slate-400 font-normal">hrs/night</span>
+
+            {/* Symptom Severity Baseline */}
+            <div className="p-4 rounded-xl bg-amethyst-950/70 border border-amethyst-800/60 space-y-1">
+              <div className="flex items-center justify-between text-xs text-slate-400">
+                <span>Symptom Intensity</span>
+                <Activity className="w-4 h-4 text-emerald-400" />
+              </div>
+              <div className="text-2xl font-extrabold text-slate-100">
+                {finalSymptomAvg != null ? (
+                  <>
+                    {finalSymptomAvg} <span className="text-xs text-slate-400 font-normal">/ 10</span>
+                  </>
+                ) : (
+                  <span className="text-slate-500 font-bold">--</span>
+                )}
+              </div>
+              <p className="text-[11px] text-slate-400">
+                {symptoms.length} total symptoms recorded
+              </p>
             </div>
-            <p className="text-[11px] text-slate-400">
-              Std Dev: ±{baselines.sleep?.std_dev || 0.8} hrs • {lifestyle.length} nights
-            </p>
+
+            {/* Biomarkers Baseline */}
+            <div className="p-4 rounded-xl bg-amethyst-950/70 border border-amethyst-800/60 space-y-1">
+              <div className="flex items-center justify-between text-xs text-slate-400">
+                <span>Lab Vault</span>
+                <FileText className="w-4 h-4 text-rosegold-400" />
+              </div>
+              <div className="text-2xl font-extrabold text-slate-100">
+                {biomarkers.length} <span className="text-xs text-slate-400 font-normal">biomarkers</span>
+              </div>
+              <p className="text-[11px] text-slate-400">
+                {documents.length} lab documents stored
+              </p>
+            </div>
+
           </div>
-
-          {/* Symptom Severity Baseline */}
-          <div className="p-4 rounded-xl bg-amethyst-950/70 border border-amethyst-800/60 space-y-1">
-            <div className="flex items-center justify-between text-xs text-slate-400">
-              <span>Symptom Intensity</span>
-              <Activity className="w-4 h-4 text-emerald-400" />
-            </div>
-            <div className="text-2xl font-extrabold text-slate-100">
-              {baselines.symptoms?.avg_severity || 3.5} <span className="text-xs text-slate-400 font-normal">/ 10</span>
-            </div>
-            <p className="text-[11px] text-slate-400">
-              {symptoms.length} total symptoms recorded
-            </p>
-          </div>
-
-          {/* Biomarkers Baseline */}
-          <div className="p-4 rounded-xl bg-amethyst-950/70 border border-amethyst-800/60 space-y-1">
-            <div className="flex items-center justify-between text-xs text-slate-400">
-              <span>Lab Vault</span>
-              <FileText className="w-4 h-4 text-rosegold-400" />
-            </div>
-            <div className="text-2xl font-extrabold text-slate-100">
-              {biomarkers.length} <span className="text-xs text-slate-400 font-normal">biomarkers</span>
-            </div>
-            <p className="text-[11px] text-slate-400">
-              {documents.length} lab documents stored
-            </p>
-          </div>
-
-        </div>
+        )}
       </div>
 
       {/* QUICK WIDGETS GRID */}

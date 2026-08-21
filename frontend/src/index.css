@@ -7,16 +7,16 @@
     background: rgba(20, 12, 36, 0.65);
     backdrop-filter: blur(16px);
     -webkit-backdrop-filter: blur(16px);
-    border: 1px solid rgba(194, 155, 250, 0.12);
+    border: 1px solid rgba(194, 155, 250, 0.15);
   }
 
   .glass-card-hover {
     transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   }
   .glass-card-hover:hover {
-    background: rgba(35, 20, 61, 0.8);
-    border-color: rgba(224, 169, 109, 0.35);
-    box-shadow: 0 8px 32px 0 rgba(117, 59, 202, 0.2);
+    background: rgba(35, 20, 61, 0.85);
+    border-color: rgba(224, 169, 109, 0.4);
+    box-shadow: 0 8px 32px 0 rgba(117, 59, 202, 0.25);
     transform: translateY(-2px);
   }
 
@@ -36,9 +36,81 @@
     box-shadow: 0 0 25px rgba(117, 59, 202, 0.35);
   }
 
+  .glow-purple-lg {
+    box-shadow: 0 0 50px rgba(117, 59, 202, 0.5), 0 0 100px rgba(224, 169, 109, 0.2);
+  }
+
   .glow-rose {
     box-shadow: 0 0 25px rgba(224, 169, 109, 0.25);
   }
+
+  .glow-cyan {
+    box-shadow: 0 0 25px rgba(56, 189, 248, 0.35);
+  }
+
+  .animate-float {
+    animation: float 6s ease-in-out infinite;
+  }
+
+  .animate-float-delayed {
+    animation: float 7s ease-in-out 2s infinite;
+  }
+
+  .animate-scanline {
+    animation: scanline 2s linear infinite;
+  }
+
+  .animate-pulse-ring {
+    animation: pulseRing 1.8s cubic-bezier(0.215, 0.61, 0.355, 1) infinite;
+  }
+
+  .animate-shake {
+    animation: shake 0.4s ease-in-out;
+  }
+
+  .animate-border-spin {
+    animation: borderSpin 8s linear infinite;
+  }
+
+  .animate-shimmer {
+    background: linear-gradient(90deg, rgba(255,255,255,0) 0%, rgba(255,255,255,0.15) 50%, rgba(255,255,255,0) 100%);
+    background-size: 200% 100%;
+    animation: shimmer 2.5s infinite;
+  }
+}
+
+@keyframes float {
+  0%, 100% { transform: translateY(0px) rotate(0deg); }
+  50% { transform: translateY(-12px) rotate(1deg); }
+}
+
+@keyframes scanline {
+  0% { top: 0%; opacity: 0; }
+  15% { opacity: 1; }
+  85% { opacity: 1; }
+  100% { top: 100%; opacity: 0; }
+}
+
+@keyframes pulseRing {
+  0% { transform: scale(0.85); opacity: 0.9; }
+  50% { transform: scale(1.25); opacity: 0.3; }
+  100% { transform: scale(1.5); opacity: 0; }
+}
+
+@keyframes borderSpin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  20%, 60% { transform: translateX(-8px); }
+  40%, 80% { transform: translateX(8px); }
+}
+
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
 }
 
 /* Custom scrollbars */

@@ -4,13 +4,15 @@ import { Send, Sparkles, ShieldCheck, Database, Bot, Trash2 } from 'lucide-react
 export default function AskTimelineView() {
   const [query, setQuery] = useState('')
   const messagesEndRef = useRef(null)
+  const [expandedRecords, setExpandedRecords] = useState({})
 
   const [messages, setMessages] = useState([
     {
       sender: 'ai',
-      text: "### 👋 Hello! I'm ORVEYRA AI\n\nI am your intelligent health assistant. I can have natural, fluidly intelligent conversations about anything — health pattern analysis, casual chat, creative writing, science, or lifestyle optimization!\n\nI correlate your cycle dates, sleep telemetry, physical symptoms, and lab biomarkers in real time to help you understand your body's clues. Ask me anything! 🚀",
+      text: "### 👋 Hello! I'm ORVEYRA AI\n\nI am your intelligent health assistant. I can have natural, fluidly intelligent conversations about anything — casual chat, science, jokes, creative writing, or personalized health pattern analysis!\n\nI correlate your **cycle dates**, **sleep telemetry**, **physical symptoms**, and **lab biomarkers** in real time to help you understand your body's clues. Ask me anything! 🚀",
       grounded_records: [],
-      confidence: 'STRONG SIGNAL'
+      confidence: 'STRONG SIGNAL',
+      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
     }
   ])
   const [loading, setLoading] = useState(false)
@@ -27,7 +29,8 @@ export default function AskTimelineView() {
       sender: 'ai',
       text: "### 🔄 Chat Cleared\n\nConversation memory has been reset. Ready for a fresh start! What would you like to talk about?",
       grounded_records: [],
-      confidence: 'STRONG SIGNAL'
+      confidence: 'STRONG SIGNAL',
+      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
     }])
   }
 
@@ -36,8 +39,9 @@ export default function AskTimelineView() {
     const textToSend = textOverride || query
     if (!textToSend.trim() || loading) return
 
+    const sendTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
     setQuery('')
-    setMessages(prev => [...prev, { sender: 'user', text: textToSend }])
+    setMessages(prev => [...prev, { sender: 'user', text: textToSend, timestamp: sendTime }])
     setLoading(true)
 
     try {
@@ -54,7 +58,8 @@ export default function AskTimelineView() {
           sender: 'ai',
           text: data.answer,
           grounded_records: data.grounded_records_used || [],
-          confidence: data.confidence || 'STRONG SIGNAL'
+          confidence: data.confidence || 'STRONG SIGNAL',
+          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
         }
       ])
     } catch (err) {
@@ -62,9 +67,10 @@ export default function AskTimelineView() {
         ...prev,
         {
           sender: 'ai',
-          text: "### ⚠️ Connection Error\n\nUnable to reach the backend. Make sure the server is running on port 8000.",
+          text: "### ⚠️ Connection Error\n\nUnable to reach the backend server. Please make sure the backend is running on port 8000.",
           grounded_records: [],
-          confidence: 'ERROR'
+          confidence: 'ERROR',
+          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
         }
       ])
     } finally {
@@ -77,9 +83,10 @@ export default function AskTimelineView() {
     { label: "😄 Tell me a joke", query: "Tell me a funny joke!" },
     { label: "⚡ Why am I tired?", query: "Why am I so tired during my period? Analyze my sleep and iron levels." },
     { label: "🌊 Write me a poem", query: "Write me a short, beautiful poem about strength and resilience" },
-    { label: "✨ Health Analysis", query: "Give me a comprehensive analysis of my overall health trends" },
-    { label: "🔬 Lab Results", query: "Summarize my lab biomarker results and flag anything concerning" },
-    { label: "🩺 Doctor Questions", query: "What questions should I bring to my next doctor visit?" }
+    { label: "✨ Full Health Analysis", query: "Give me a comprehensive analysis of my overall health trends" },
+    { label: "🔬 Lab Biomarkers", query: "Summarize my lab biomarker results and flag anything concerning" },
+    { label: "🩺 Doctor Prep", query: "What questions should I bring to my next doctor visit?" },
+    { label: "🩸 Cycle Analysis", query: "Analyze my cycle patterns and flag any irregularities" }
   ]
 
   const renderFormattedMarkdown = (text) => {
@@ -144,22 +151,15 @@ export default function AskTimelineView() {
     return out
   }
 
-  const confidenceBadge = (conf) => {
-    const styles = {
-      'STRONG SIGNAL': 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40',
-      'SETUP': 'bg-blue-500/20 text-blue-300 border-blue-500/40',
-      'SETUP REQUIRED': 'bg-amber-500/20 text-amber-300 border-amber-500/40',
-      'ERROR': 'bg-red-500/20 text-red-300 border-red-500/40',
-      'INSUFFICIENT DATA': 'bg-amber-500/20 text-amber-300 border-amber-500/40',
-    }
-    return styles[conf] || styles['STRONG SIGNAL']
+  const toggleRecordExpand = (msgIdx) => {
+    setExpandedRecords(prev => ({ ...prev, [msgIdx]: !prev[msgIdx] }))
   }
 
   return (
     <div className="max-w-4xl mx-auto space-y-4 animate-in fade-in duration-300">
       
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold gradient-text flex items-center gap-2">
             <Bot className="w-6 h-6 text-rosegold-400" />
@@ -170,10 +170,10 @@ export default function AskTimelineView() {
           </p>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <button
             onClick={handleClearChat}
-            className="px-3 py-1.5 rounded-full bg-amethyst-900/80 hover:bg-red-900/40 border border-amethyst-700/60 text-xs text-slate-300 hover:text-red-300 flex items-center gap-1.5 transition-colors"
+            className="px-3 py-1.5 rounded-full bg-amethyst-900/80 hover:bg-red-900/40 border border-amethyst-700/60 text-xs text-slate-300 hover:text-red-300 flex items-center gap-1.5 transition-colors cursor-pointer"
             title="Clear conversation"
           >
             <Trash2 className="w-3.5 h-3.5" />
@@ -213,34 +213,57 @@ export default function AskTimelineView() {
                       <span className="text-[11px] font-extrabold tracking-wider gradient-text">
                         ORVEYRA AI
                       </span>
+                      {msg.timestamp && (
+                        <span className="text-[10px] text-slate-500 ml-1">{msg.timestamp}</span>
+                      )}
                     </div>
 
-                    <span className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded-full border ${confidenceBadge(msg.confidence)}`}>
-                      {msg.confidence}
+                    <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded-full border bg-emerald-500/20 text-emerald-300 border-emerald-500/40 flex items-center gap-1">
+                      <Sparkles className="w-3 h-3" />
+                      {(msg.confidence && !msg.confidence.toLowerCase().includes('gemini') && !msg.confidence.toLowerCase().includes('live ai')) ? msg.confidence : 'ORVEYRA INTELLIGENCE'}
                     </span>
                   </div>
                 )}
 
                 {msg.sender === 'user' ? (
-                  <p className="text-sm">{msg.text}</p>
+                  <div className="flex items-end justify-between gap-2">
+                    <p className="text-sm">{msg.text}</p>
+                    {msg.timestamp && (
+                      <span className="text-[10px] text-white/60 shrink-0">{msg.timestamp}</span>
+                    )}
+                  </div>
                 ) : (
                   renderFormattedMarkdown(msg.text)
                 )}
 
                 {/* Grounded Records */}
                 {msg.grounded_records && msg.grounded_records.length > 0 && (
-                  <div className="mt-3 pt-2 border-t border-amethyst-800/80 space-y-1">
-                    <span className="text-[10px] uppercase font-bold text-slate-400 flex items-center gap-1">
+                  <div className="mt-3 pt-2 border-t border-amethyst-800/80 space-y-1.5">
+                    <button
+                      onClick={() => toggleRecordExpand(idx)}
+                      className="text-[10px] uppercase font-bold text-slate-400 flex items-center gap-1 hover:text-rosegold-300 transition-colors cursor-pointer"
+                    >
                       <Database className="w-3 h-3 text-rosegold-400" />
-                      Evidence Records ({msg.grounded_records.length}):
-                    </span>
-                    <div className="flex flex-wrap gap-1 pt-0.5">
-                      {msg.grounded_records.map((r, i) => (
-                        <span key={i} className="text-[10px] font-medium px-2 py-0.5 rounded bg-amethyst-900 border border-amethyst-700/60 text-slate-300">
-                          {r.type || 'log'}: {r.start_date || r.date || r.test_name || 'entry'}
-                        </span>
-                      ))}
-                    </div>
+                      Evidence Records ({msg.grounded_records.length})
+                      <span className="text-[10px] ml-1">{expandedRecords[idx] ? '▼' : '▶'}</span>
+                    </button>
+                    {expandedRecords[idx] && (
+                      <div className="flex flex-wrap gap-1 pt-0.5 animate-in fade-in duration-200">
+                        {msg.grounded_records.map((r, i) => (
+                          <span key={i} className="text-[10px] font-medium px-2 py-1 rounded-lg bg-amethyst-900 border border-amethyst-700/60 text-slate-300 flex items-center gap-1">
+                            <span className={`w-1.5 h-1.5 rounded-full ${
+                              r.type === 'cycle' ? 'bg-pink-400' :
+                              r.type === 'symptom' ? 'bg-amber-400' :
+                              r.type === 'biomarker' ? 'bg-cyan-400' :
+                              r.type === 'lifestyle' ? 'bg-emerald-400' :
+                              r.type === 'body_drift_flag' ? 'bg-red-400' :
+                              'bg-slate-400'
+                            }`} />
+                            {r.type || 'log'}: {r.start_date || r.date || r.test_name || r.metric || 'entry'}
+                          </span>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
@@ -271,7 +294,7 @@ export default function AskTimelineView() {
                 key={idx}
                 onClick={(e) => handleSend(e, topic.query)}
                 disabled={loading}
-                className="px-2.5 py-1.5 rounded-xl bg-amethyst-900/80 hover:bg-amethyst-800 border border-amethyst-700/60 text-[11px] font-medium text-slate-200 whitespace-nowrap transition-all hover:border-rosegold-500/50 disabled:opacity-50"
+                className="px-2.5 py-1.5 rounded-xl bg-amethyst-900/80 hover:bg-amethyst-800 border border-amethyst-700/60 text-[11px] font-medium text-slate-200 whitespace-nowrap transition-all hover:border-rosegold-500/50 disabled:opacity-50 cursor-pointer"
               >
                 {topic.label}
               </button>
@@ -292,7 +315,7 @@ export default function AskTimelineView() {
           <button
             type="submit"
             disabled={loading}
-            className="px-6 py-3 rounded-xl bg-gradient-to-r from-amethyst-600 via-amethyst-500 to-rosegold-600 hover:from-amethyst-500 hover:to-rosegold-500 text-white font-bold text-sm shadow-lg transition-all glow-purple flex items-center justify-center gap-1.5 disabled:opacity-50"
+            className="px-6 py-3 rounded-xl bg-gradient-to-r from-amethyst-600 via-amethyst-500 to-rosegold-600 hover:from-amethyst-500 hover:to-rosegold-500 text-white font-bold text-sm shadow-lg transition-all glow-purple flex items-center justify-center gap-1.5 disabled:opacity-50 cursor-pointer"
           >
             <Send className="w-4 h-4" />
           </button>

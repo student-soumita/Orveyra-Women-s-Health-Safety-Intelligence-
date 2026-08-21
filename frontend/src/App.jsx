@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react'
 import Navbar from './components/Navbar'
 import FooterDisclaimer from './components/FooterDisclaimer'
 import AuthModal from './components/AuthModal'
+import LoginPage from './components/LoginPage'
 import OnboardingFlow from './components/OnboardingFlow'
 import QuickLogModal from './components/QuickLogModal'
 import EvidenceDrawer from './components/EvidenceDrawer'
@@ -52,9 +53,11 @@ export default function App() {
         setProfile(data.profile)
       } else {
         setUser(null)
+        setActiveTab('login')
       }
     } catch (err) {
       setUser(null)
+      setActiveTab('login')
     }
   }
 
@@ -84,6 +87,8 @@ export default function App() {
 
   const handleLoginSuccess = (userData, token) => {
     setUser(userData)
+    setIsAuthOpen(false)
+    setActiveTab('dashboard')
     checkCurrentSession()
     fetchAllData()
   }
@@ -99,7 +104,7 @@ export default function App() {
     setMedications([])
     setDocuments([])
     setBodyDriftData(null)
-    setActiveTab('dashboard')
+    setActiveTab('login')
   }
 
   const handleDeleteAccount = async () => {
@@ -117,103 +122,115 @@ export default function App() {
     }
   }
 
+  // Check if we should present the standalone Animated Login Page before main page
+  const showLoginPage = !user || activeTab === 'login'
+
   return (
     <div className="flex flex-col min-h-screen bg-amethyst-950 text-slate-100 font-sans selection:bg-amethyst-500 selection:text-white">
       
-      {/* Top Navigation */}
-      <Navbar
-        activeTab={activeTab}
-        setActiveTab={setActiveTab}
-        user={user}
-        onOpenAuth={() => setIsAuthOpen(true)}
-        onLogout={handleLogout}
-        onOpenQuickLog={() => setIsQuickLogOpen(true)}
-      />
+      {/* Top Navigation Bar - Hidden on Standalone Login Page */}
+      {!showLoginPage && (
+        <Navbar
+          activeTab={activeTab}
+          setActiveTab={setActiveTab}
+          user={user}
+          onOpenAuth={() => setIsAuthOpen(true)}
+          onLogout={handleLogout}
+          onOpenQuickLog={() => setIsQuickLogOpen(true)}
+        />
+      )}
 
       {/* Main Workspace Body */}
-      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8">
-        
-        {isOnboarding ? (
-          <OnboardingFlow
-            onComplete={() => {
-              setIsOnboarding(false)
-              checkCurrentSession()
-              fetchAllData()
-            }}
-            onSkip={() => setIsOnboarding(false)}
+      {showLoginPage ? (
+        <div className="flex-1 w-full flex items-center justify-center">
+          <LoginPage
+            onLoginSuccess={handleLoginSuccess}
           />
-        ) : (
-          <>
-            {activeTab === 'dashboard' && (
-              <Dashboard
-                user={user}
-                profile={profile}
-                bodyDriftData={bodyDriftData}
-                cycles={cycles}
-                symptoms={symptoms}
-                lifestyle={lifestyle}
-                biomarkers={biomarkers}
-                documents={documents}
-                onOpenQuickLog={() => setIsQuickLogOpen(true)}
-                onOpenEvidence={() => setIsEvidenceOpen(true)}
-                onNavigateTab={(tab) => setActiveTab(tab)}
-              />
-            )}
+        </div>
+      ) : (
+        <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8">
+          {isOnboarding ? (
+            <OnboardingFlow
+              onComplete={() => {
+                setIsOnboarding(false)
+                checkCurrentSession()
+                fetchAllData()
+              }}
+              onSkip={() => setIsOnboarding(false)}
+            />
+          ) : (
+            <>
+              {activeTab === 'dashboard' && (
+                <Dashboard
+                  user={user}
+                  profile={profile}
+                  bodyDriftData={bodyDriftData}
+                  cycles={cycles}
+                  symptoms={symptoms}
+                  lifestyle={lifestyle}
+                  biomarkers={biomarkers}
+                  documents={documents}
+                  onOpenQuickLog={() => setIsQuickLogOpen(true)}
+                  onOpenEvidence={() => setIsEvidenceOpen(true)}
+                  onNavigateTab={(tab) => setActiveTab(tab)}
+                  onRefreshData={fetchAllData}
+                />
+              )}
 
-            {activeTab === 'timeline' && (
-              <TimelineView
-                cycles={cycles}
-                symptoms={symptoms}
-                lifestyle={lifestyle}
-                biomarkers={biomarkers}
-                medications={medications}
-                onDeleteLog={handleDeleteLog}
-                onRefresh={fetchAllData}
-              />
-            )}
+              {activeTab === 'timeline' && (
+                <TimelineView
+                  cycles={cycles}
+                  symptoms={symptoms}
+                  lifestyle={lifestyle}
+                  biomarkers={biomarkers}
+                  medications={medications}
+                  onDeleteLog={handleDeleteLog}
+                  onRefresh={fetchAllData}
+                />
+              )}
 
-            {activeTab === 'signal-graph' && (
-              <SignalGraphView
-                cycles={cycles}
-                symptoms={symptoms}
-                lifestyle={lifestyle}
-                biomarkers={biomarkers}
-                medications={medications}
-              />
-            )}
+              {activeTab === 'signal-graph' && (
+                <SignalGraphView
+                  cycles={cycles}
+                  symptoms={symptoms}
+                  lifestyle={lifestyle}
+                  biomarkers={biomarkers}
+                  medications={medications}
+                />
+              )}
 
-            {activeTab === 'lab-vault' && (
-              <LabVaultView
-                documents={documents}
-                biomarkers={biomarkers}
-                onRefresh={fetchAllData}
-              />
-            )}
+              {activeTab === 'lab-vault' && (
+                <LabVaultView
+                  documents={documents}
+                  biomarkers={biomarkers}
+                  onRefresh={fetchAllData}
+                />
+              )}
 
-            {activeTab === 'ask-timeline' && (
-              <AskTimelineView />
-            )}
+              {activeTab === 'ask-timeline' && (
+                <AskTimelineView />
+              )}
 
-            {activeTab === 'doctor-mode' && (
-              <DoctorModeView />
-            )}
+              {activeTab === 'doctor-mode' && (
+                <DoctorModeView />
+              )}
 
-            {activeTab === 'privacy-center' && (
-              <PrivacyCenterView
-                user={user}
-                profile={profile}
-                onToggleAI={(val) => setProfile(prev => ({ ...prev, ai_processing_enabled: val }))}
-                onDeleteAccount={handleDeleteAccount}
-                onRefresh={fetchAllData}
-              />
-            )}
-          </>
-        )}
+              {activeTab === 'privacy-center' && (
+                <PrivacyCenterView
+                  user={user}
+                  profile={profile}
+                  onToggleAI={(val) => setProfile(prev => ({ ...prev, ai_processing_enabled: val }))}
+                  onDeleteAccount={handleDeleteAccount}
+                  onRefresh={fetchAllData}
+                />
+              )}
+            </>
+          )}
+        </main>
+      )}
 
-      </main>
-
-      {/* Persistent Mandatory Clinical Safety Disclaimer Footer */}
-      <FooterDisclaimer />
+      {/* Persistent Clinical Safety Disclaimer Footer */}
+      {!showLoginPage && <FooterDisclaimer />}
 
       {/* Global Modals & Drawers */}
       <AuthModal
@@ -238,3 +255,4 @@ export default function App() {
     </div>
   )
 }
+

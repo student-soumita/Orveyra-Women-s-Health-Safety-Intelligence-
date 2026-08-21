@@ -367,6 +367,61 @@ def get_medication_logs(user: User = Depends(get_current_user), db: Session = De
     meds = db.query(MedicationLog).filter(MedicationLog.user_id == user.id).order_by(MedicationLog.start_date.desc()).all()
     return [{"id": m.id, "medication_name": m.medication_name, "dosage": m.dosage, "frequency": m.frequency, "start_date": m.start_date, "end_date": m.end_date, "is_active": m.is_active, "notes": m.notes} for m in meds]
 
+@app.delete("/api/logs/clear-all")
+def clear_all_health_logs(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """
+    Clears all health logs (cycles, symptoms, lifestyle, biomarkers, medications, document vault, AI observations) for the authenticated user.
+    Resets the health telemetry to an empty baseline state.
+    """
+    db.query(CycleLog).filter(CycleLog.user_id == user.id).delete(synchronize_session=False)
+    db.query(SymptomLog).filter(SymptomLog.user_id == user.id).delete(synchronize_session=False)
+    db.query(LifestyleLog).filter(LifestyleLog.user_id == user.id).delete(synchronize_session=False)
+    db.query(BiomarkerLog).filter(BiomarkerLog.user_id == user.id).delete(synchronize_session=False)
+    db.query(MedicationLog).filter(MedicationLog.user_id == user.id).delete(synchronize_session=False)
+    db.query(DocumentVault).filter(DocumentVault.user_id == user.id).delete(synchronize_session=False)
+    db.query(AIObservation).filter(AIObservation.user_id == user.id).delete(synchronize_session=False)
+    db.commit()
+    log_audit(db, user.id, "CLEAR_ALL_TELEMETRY_LOGS")
+    return {"message": "All health telemetry logs successfully cleared. Reset to empty baseline."}
+
+@app.post("/api/logs/seed-sample")
+def seed_sample_telemetry(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """
+    Populates 90 days of realistic sample health telemetry for testing all features instantly.
+    """
+    db.query(CycleLog).filter(CycleLog.user_id == user.id).delete(synchronize_session=False)
+    db.query(SymptomLog).filter(SymptomLog.user_id == user.id).delete(synchronize_session=False)
+    db.query(LifestyleLog).filter(LifestyleLog.user_id == user.id).delete(synchronize_session=False)
+    db.query(BiomarkerLog).filter(BiomarkerLog.user_id == user.id).delete(synchronize_session=False)
+    db.query(MedicationLog).filter(MedicationLog.user_id == user.id).delete(synchronize_session=False)
+
+    today = datetime.date.today()
+
+    c1 = CycleLog(user_id=user.id, start_date=str(today - datetime.timedelta(days=84)), end_date=str(today - datetime.timedelta(days=79)), flow_intensity="Medium", notes="Normal cycle start")
+    c2 = CycleLog(user_id=user.id, start_date=str(today - datetime.timedelta(days=56)), end_date=str(today - datetime.timedelta(days=51)), flow_intensity="Heavy", notes="Slight spotting beforehand")
+    c3 = CycleLog(user_id=user.id, start_date=str(today - datetime.timedelta(days=27)), end_date=str(today - datetime.timedelta(days=22)), flow_intensity="Medium", notes="On time")
+    db.add_all([c1, c2, c3])
+
+    for i in range(30):
+        d_str = str(today - datetime.timedelta(days=i))
+        sleep_h = 7.5 + (0.5 if i % 3 == 0 else -0.3 if i % 5 == 0 else 0)
+        stress_l = 3 + (2 if 10 <= i <= 15 else 0)
+        l_log = LifestyleLog(user_id=user.id, date=d_str, sleep_hours=sleep_h, sleep_quality="Good" if sleep_h >= 7 else "Fair", stress_level=stress_l, activity_minutes=30)
+        db.add(l_log)
+
+    s1 = SymptomLog(user_id=user.id, date=str(today - datetime.timedelta(days=5)), category="Pelvic", symptom_name="Cramping", severity=4, notes="Luteal phase onset")
+    s2 = SymptomLog(user_id=user.id, date=str(today - datetime.timedelta(days=12)), category="Energy", symptom_name="Fatigue", severity=5, notes="Mid-day drop")
+    s3 = SymptomLog(user_id=user.id, date=str(today - datetime.timedelta(days=20)), category="Mood", symptom_name="Anxiety", severity=3, notes="Work deadline")
+    db.add_all([s1, s2, s3])
+
+    b1 = BiomarkerLog(user_id=user.id, date=str(today - datetime.timedelta(days=15)), lab_name="Quest Diagnostics", test_name="Ferritin", numeric_value=22.0, unit="ng/mL", reference_range="15-150 ng/mL", is_abnormal=False)
+    b2 = BiomarkerLog(user_id=user.id, date=str(today - datetime.timedelta(days=15)), lab_name="Quest Diagnostics", test_name="TSH", numeric_value=2.1, unit="mIU/L", reference_range="0.4-4.0 mIU/L", is_abnormal=False)
+    db.add_all([b1, b2])
+
+    db.commit()
+    log_audit(db, user.id, "SEED_SAMPLE_HEALTH_TELEMETRY")
+    return {"message": "Sample health telemetry seeded successfully"}
+
 # ---------------------------------------------------------
 # DOCUMENT VAULT & IDP VERIFICATION GATEKEEPER
 # ---------------------------------------------------------
@@ -539,6 +594,21 @@ def ask_timeline(req: AskTimelineRequest, user: User = Depends(get_current_user)
     for b in biomarkers:
         timeline_context.append({"type": "biomarker", "date": b.date, "test_name": b.test_name, "numeric_value": b.numeric_value, "unit": b.unit, "is_abnormal": b.is_abnormal})
 
+    meds = db.query(MedicationLog).filter(MedicationLog.user_id == user.id).all()
+    for m in meds:
+        timeline_context.append({"type": "medication", "name": m.medication_name, "dosage": m.dosage, "frequency": m.frequency})
+
+    # Include Body Drift calculation
+    drift_math = BodyDriftEngine.evaluate_body_drift(
+        [c.__dict__ for c in cycles],
+        [s.__dict__ for s in symptoms],
+        [l.__dict__ for l in lifestyle],
+        [b.__dict__ for b in biomarkers]
+    )
+    if drift_math.get("statistical_flags"):
+        for f in drift_math["statistical_flags"]:
+            timeline_context.append({"type": "body_drift_flag", "metric": f.get("metric"), "variance": f.get("variance"), "baseline": f.get("baseline"), "current": f.get("current")})
+
     result = AIEngine.ask_timeline_grounded(req.query, timeline_context, profile.__dict__ if profile else None, user_id=user.id)
     log_audit(db, user.id, "ASK_TIMELINE_QUERY")
     return result
@@ -546,14 +616,38 @@ def ask_timeline(req: AskTimelineRequest, user: User = Depends(get_current_user)
 class SetKeyRequest(BaseModel):
     api_key: str
 
+@app.get("/api/ai/status")
+def get_ai_status(user: User = Depends(get_current_user)):
+    load_dotenv()
+    key = os.getenv("GEMINI_API_KEY", "").strip()
+    is_active = bool(key and key != "your_gemini_api_key_here")
+    return {
+        "ai_connected": is_active,
+        "status": "active" if is_active else "standby"
+    }
+
 @app.post("/api/ai/set-key")
 def set_gemini_api_key(req: SetKeyRequest, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    """Set Gemini API key at runtime (stored in process env, not persisted to disk)."""
-    os.environ["GEMINI_API_KEY"] = req.api_key
-    # Force re-initialization of the client
-    AIEngine._client = None
+    """Set Gemini API key at runtime (stored in process env and saved to .env)."""
+    new_key = req.api_key.strip()
+    os.environ["GEMINI_API_KEY"] = new_key
+    env_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".env")
+    try:
+        with open(env_path, "w") as f:
+            f.write(f"GEMINI_API_KEY={new_key}\n")
+    except Exception as e:
+        print(f"[Main] Error writing to .env: {e}")
+
+    # Force re-initialization of the model instance
+    AIEngine._configured_key = None
+    AIEngine._model_instance = None
+    
+    model = AIEngine._get_model()
     log_audit(db, user.id, "SET_GEMINI_API_KEY")
-    return {"message": "Gemini API key configured successfully. Chat is now powered by Gemini!"}
+    if model:
+        return {"message": f"Google Gemini API connected successfully to model {AIEngine._model_name}!", "connected": True, "model": AIEngine._model_name}
+    else:
+        return {"message": "API key saved, but Gemini connection failed. Please check key validity.", "connected": False}
 
 @app.post("/api/ai/clear-chat")
 def clear_chat_memory(user: User = Depends(get_current_user)):

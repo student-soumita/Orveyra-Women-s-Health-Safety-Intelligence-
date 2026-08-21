@@ -8,13 +8,14 @@ from app.middleware.privacy import PIISanitizer
 
 load_dotenv()
 
-# Google Generative AI SDK
+# Google GenAI Official SDK
 try:
-    import google.generativeai as genai
-    GEMINI_AVAILABLE = True
+    from google import genai
+    from google.genai import types
+    GENAI_AVAILABLE = True
 except ImportError:
-    GEMINI_AVAILABLE = False
-    print("[AI Engine] google-generativeai package not installed.")
+    GENAI_AVAILABLE = False
+    print("[AI Engine] google-genai package not installed.")
 
 
 class ConversationMemory:
@@ -31,44 +32,42 @@ class ConversationMemory:
             cls._store[user_id] = []
         
         api_role = "user" if role == "user" else "model"
-        cls._store[user_id].append({"role": api_role, "parts": [text]})
+        cls._store[user_id].append({"role": api_role, "text": text})
         
-        if len(cls._store[user_id]) > 30:
-            cls._store[user_id] = cls._store[user_id][-30:]
+        if len(cls._store[user_id]) > 40:
+            cls._store[user_id] = cls._store[user_id][-40:]
 
     @classmethod
     def clear(cls, user_id: int):
         cls._store.pop(user_id, None)
 
 
-SYSTEM_INSTRUCTION = """You are ORVEYRA AI — a world-class, warm, witty, deeply intelligent conversational AI assistant embedded inside a women's health tracking platform called ORVEYRA.
+SYSTEM_INSTRUCTION = """You are ORVEYRA AI — a world-class, warm, witty, deeply intelligent conversational AI assistant embedded inside a women's health intelligence platform called ORVEYRA.
 
-YOUR PERSONALITY:
-- You are exceptionally smart, natural, empathetic, and versatile.
-- You can handle ANY topic: casual chit-chat, jokes, creative writing, science, math, philosophy, recommendations, emotional support, and health pattern analysis.
-- You respond with warmth, personality, and natural human-like conversation flow.
-- You remember conversation context — if someone says "that's funny" or "tell me another", you respond naturally to the context.
-- You use emojis tastefully.
-- You format responses in clean Markdown when helpful (bold, headers, lists) but keep casual replies natural and engaging.
+YOUR PERSONALITY & CAPABILITIES:
+- You are as intelligent, natural, and versatile as ChatGPT or Gemini.
+- You can converse on ANY topic: casual chit-chat, random facts, jokes, riddles, creative writing, science, math, coding, philosophy, daily advice, and emotional support.
+- You respond with warmth, humor, wit, and natural human-like conversational flow.
+- You have full multi-turn memory: if the user follows up with "tell me another joke", "why?", or "that's cool", you respond naturally in context.
+- You format responses in clean Markdown (bold, lists, headers) when helpful, but keep casual chat brief and lively.
 
 YOUR HEALTH EXPERTISE:
-- When the user asks about health, analyze their REAL timeline data (cycles, symptoms, sleep logs, lab biomarkers) provided in context.
-- Explain health patterns in plain, empathetic language.
+- When the user asks about their health, analyze their real timeline data (cycle dates, symptoms, sleep logs, and lab biomarkers) provided in the context.
+- Explain co-occurring patterns with empathy and clarity.
 - NEVER diagnose medical conditions. NEVER say "you have PCOS/PMDD/endometriosis".
-- NEVER give disease probabilities or percentages.
-- Use observational, non-diagnostic framing: "Your records show..." / "This pattern may be worth discussing with your physician..."
-- Suggest specific discussion questions for their doctor visit.
+- NEVER provide numerical disease probabilities.
+- Use observational language: "Your records show..." / "This pattern may be worth discussing with your doctor..."
+- End health analyses with concise questions the user can bring to their healthcare provider.
 
 RESPONSE STYLE:
-- For casual chat: Keep it natural, brief, warm. Like texting a brilliant friend.
-- For health questions: Use structured Markdown with headers, bold key findings, and bullet points.
-- Always end health responses with a doctor discussion question when relevant."""
+- Casual chit-chat / banter: Warm, engaging, concise.
+- Health queries: Structured Markdown with clear headers and bullet points.
+- Creative queries: Highly creative, imaginative, and engaging."""
 
 
 class AIEngine:
     """
-    Live Conversational AI Engine for ORVEYRA.
-    Uses Generative AI API with multi-turn memory.
+    Live Multi-Turn Conversational AI Engine powered by Google GenAI.
     """
 
     MANDATORY_DISCLAIMER = (
@@ -76,67 +75,96 @@ class AIEngine:
         "or substitute for professional medical care."
     )
 
+    _client = None
     _configured_key = None
-    _model_instance = None
-    _model_name = "gemini-3.6-flash"
+    _active_model = "gemini-3.5-flash"
+
+    # Priority order for fastest and highest-quota models
+    CANDIDATE_MODELS = [
+        "gemini-3.5-flash",
+        "gemini-3.5-flash-lite",
+        "gemini-3.1-flash-lite",
+        "gemini-3.6-flash",
+        "gemini-3.7-flash",
+        "gemma-4-26b-a4b-it"
+    ]
 
     @classmethod
-    def _get_model(cls):
-        """Initializes and returns configured GenerativeModel."""
+    def _get_client(cls):
+        """Initializes and returns configured GenAI client."""
         load_dotenv()
         api_key = os.getenv("GEMINI_API_KEY", "").strip()
-        
-        if not api_key or not GEMINI_AVAILABLE:
+
+        if not api_key or api_key == "your_gemini_api_key_here" or not GENAI_AVAILABLE:
             return None
 
-        if cls._configured_key != api_key or cls._model_instance is None:
+        if cls._configured_key != api_key or cls._client is None:
             try:
-                genai.configure(api_key=api_key)
-                
-                models_to_try = ["gemini-3.6-flash", "gemini-2.5-flash", "gemini-3.5-flash", "gemini-flash-latest"]
-                selected_model = models_to_try[0]
-                
-                cls._model_instance = genai.GenerativeModel(
-                    model_name=selected_model,
-                    system_instruction=SYSTEM_INSTRUCTION
-                )
+                cls._client = genai.Client(api_key=api_key)
                 cls._configured_key = api_key
-                print(f"[AI Engine] Model initialized successfully ({selected_model})")
+                print("[AI Engine] Google GenAI client configured successfully.")
             except Exception as e:
-                print(f"[AI Engine] Error configuring AI model: {e}")
-                traceback.print_exc()
+                print(f"[AI Engine] Error configuring GenAI client: {e}")
                 return None
 
-        return cls._model_instance
+        return cls._client
 
     @classmethod
     def _call_gemini(cls, user_id: int, user_message: str, health_context_str: str = "") -> Optional[str]:
-        """Calls AI API with conversation history for multi-turn intelligence."""
-        model = cls._get_model()
-        if model is None:
+        """Calls Google GenAI with model fallback and conversation history."""
+        client = cls._get_client()
+        if client is None:
             return None
 
-        try:
-            if health_context_str:
-                full_prompt = f"{user_message}\n\n[User's Health Timeline Data for Context]:\n{health_context_str}"
-            else:
-                full_prompt = user_message
+        # Build prompt with health context if present
+        if health_context_str:
+            prompt_content = f"{user_message}\n\n[User's Health Records for Context]:\n{health_context_str}"
+        else:
+            prompt_content = user_message
 
-            history = ConversationMemory.get_history(user_id)
-            chat = model.start_chat(history=history)
-            response = chat.send_message(full_prompt)
+        # Fetch history
+        history = ConversationMemory.get_history(user_id)
 
-            reply = response.text
-            if reply:
-                ConversationMemory.add_turn(user_id, "user", user_message)
-                ConversationMemory.add_turn(user_id, "model", reply)
-                return reply
-            return None
+        for model_name in cls.CANDIDATE_MODELS:
+            try:
+                # Build contents with system instruction and history
+                config = types.GenerateContentConfig(
+                    system_instruction=SYSTEM_INSTRUCTION,
+                    temperature=0.7,
+                )
 
-        except Exception as e:
-            print(f"[AI Engine] AI generation error: {e}")
-            traceback.print_exc()
-            return None
+                # Format multi-turn contents
+                contents = []
+                for turn in history:
+                    contents.append(types.Content(
+                        role=turn["role"],
+                        parts=[types.Part.from_text(text=turn["text"])]
+                    ))
+                contents.append(types.Content(
+                    role="user",
+                    parts=[types.Part.from_text(text=prompt_content)]
+                ))
+
+                response = client.models.generate_content(
+                    model=model_name,
+                    contents=contents,
+                    config=config
+                )
+
+                reply = response.text
+                if reply:
+                    cls._active_model = model_name
+                    ConversationMemory.add_turn(user_id, "user", user_message)
+                    ConversationMemory.add_turn(user_id, "model", reply)
+                    return reply
+
+            except Exception as e:
+                err_msg = str(e)
+                print(f"[AI Engine] Model {model_name} failed: {err_msg[:120]}")
+                # If rate limited or not found, try next candidate model
+                continue
+
+        return None
 
     @classmethod
     def generate_explanation_from_drift(
@@ -222,6 +250,93 @@ class AIEngine:
         }
 
     @classmethod
+    def _generate_local_pattern_response(
+        cls,
+        query: str,
+        timeline_context: List[Dict],
+        user_profile: Dict[str, Any] = None
+    ) -> Dict[str, Any]:
+        """
+        Grounded Medical & Conversational Pattern Fallback.
+        """
+        q_lower = query.lower()
+
+        cycles = [x for x in timeline_context if x.get("type") == "cycle"]
+        symptoms = [x for x in timeline_context if x.get("type") == "symptom"]
+        lifestyle = [x for x in timeline_context if x.get("type") == "lifestyle"]
+        biomarkers = [x for x in timeline_context if x.get("type") == "biomarker"]
+
+        avg_sleep = None
+        if lifestyle:
+            sleep_vals = [l.get("sleep_hours") for l in lifestyle if l.get("sleep_hours") is not None]
+            if sleep_vals:
+                avg_sleep = round(sum(sleep_vals) / len(sleep_vals), 1)
+
+        # 1. GREETINGS
+        if any(w in q_lower for w in ["who are you", "hello", "hi", "hey", "what can you do"]):
+            ans = (
+                "### 👋 Hello! I'm ORVEYRA AI\n\n"
+                "I am your intelligent health assistant and conversational companion. "
+                "I can analyze your **cycle patterns**, **sleep telemetry**, **physical symptoms**, and **lab biomarkers**, "
+                "or chat about science, jokes, creative writing, and daily wellness!\n\n"
+                "What would you like to explore today?"
+            )
+            return {
+                "answer": ans,
+                "grounded_records_used": timeline_context[:3],
+                "confidence": "ORVEYRA PATTERN ENGINE",
+                "disclaimer": cls.MANDATORY_DISCLAIMER
+            }
+
+        # 2. JOKES / CHIT CHAT
+        if "joke" in q_lower or "funny" in q_lower:
+            ans = (
+                "### 😄 Here's one for you!\n\n"
+                "**Why can't you trust atoms?**\n\n"
+                "*Because they make up everything!* ⚛️✨\n\n"
+                "Ask me anything else — science facts, health telemetry, or more jokes!"
+            )
+            return {
+                "answer": ans,
+                "grounded_records_used": [],
+                "confidence": "ORVEYRA PATTERN ENGINE",
+                "disclaimer": cls.MANDATORY_DISCLAIMER
+            }
+
+        # 3. FATIGUE / HEALTH PATTERNS
+        if any(w in q_lower for w in ["tired", "fatigue", "sleep", "energy", "exhausted"]):
+            findings = []
+            if avg_sleep is not None:
+                findings.append(f"- **Sleep Telemetry**: Average `{avg_sleep} hrs/night` logged.")
+            if symptoms:
+                findings.append(f"- **Symptoms**: `{len(symptoms)} entries` logged across recent weeks.")
+
+            ans = (
+                "### ⚡ Fatigue & Energy Pattern Analysis\n\n"
+                + ("\n".join(findings) if findings else "- Continue daily logging to correlate sleep architecture with energy levels.") + "\n\n"
+                "#### 🩺 Clinician Discussion Points:\n"
+                "- Discuss running an Iron/Ferritin panel and Thyroid profile (TSH) with your healthcare provider."
+            )
+            return {
+                "answer": ans,
+                "grounded_records_used": timeline_context[:4],
+                "confidence": "ORVEYRA PATTERN ENGINE",
+                "disclaimer": cls.MANDATORY_DISCLAIMER
+            }
+
+        # Default intelligent response
+        return {
+            "answer": (
+                f"### 💡 ORVEYRA Response for '{query}'\n\n"
+                "I'm here to assist with health pattern analysis, casual conversation, science questions, or doctor visit preparation.\n\n"
+                "Try asking: *'Tell me a joke'*, *'Why am I tired?'*, *'Explain my lab biomarkers'*, or *'What questions should I ask my doctor?'*."
+            ),
+            "grounded_records_used": timeline_context[:2],
+            "confidence": "ORVEYRA PATTERN ENGINE",
+            "disclaimer": cls.MANDATORY_DISCLAIMER
+        }
+
+    @classmethod
     def ask_timeline_grounded(
         cls,
         query: str,
@@ -230,7 +345,7 @@ class AIEngine:
         user_id: int = 0
     ) -> Dict[str, Any]:
         """
-        Primary conversational endpoint. Uses live AI with multi-turn memory.
+        Primary conversational endpoint with live AI and multi-turn memory.
         """
         sanitized_context = PIISanitizer.prepare_timeline_for_ai(timeline_context, user_profile)
         sanitized_query = PIISanitizer.sanitize_text(query)
@@ -239,14 +354,14 @@ class AIEngine:
         if sanitized_context:
             health_context_str = json.dumps(sanitized_context[:15], indent=1, default=str)
 
-        # Execute Live AI Call
-        gemini_response = cls._call_gemini(
+        # Execute Live GenAI Call
+        ai_response = cls._call_gemini(
             user_id=user_id,
             user_message=sanitized_query,
             health_context_str=health_context_str
         )
 
-        if gemini_response:
+        if ai_response:
             q_lower = sanitized_query.lower()
             show_records = any(w in q_lower for w in [
                 "health", "cycle", "period", "sleep", "fatigue", "lab", "ferritin",
@@ -255,20 +370,15 @@ class AIEngine:
             ])
 
             return {
-                "answer": gemini_response,
+                "answer": ai_response,
                 "grounded_records_used": sanitized_context[:6] if show_records else [],
-                "confidence": "STRONG SIGNAL",
+                "confidence": "ORVEYRA INTELLIGENCE",
                 "disclaimer": cls.MANDATORY_DISCLAIMER
             }
 
-        # Setup Instructions Fallback if Key isn't loaded
-        return {
-            "answer": (
-                "### ⚙️ AI Engine Key Not Active\n\n"
-                "To activate live intelligent chat, connect your API key in the top right drawer.\n\n"
-                "Once connected, I will answer any query with live, multi-turn conversational intelligence! 🚀"
-            ),
-            "grounded_records_used": [],
-            "confidence": "SETUP REQUIRED",
-            "disclaimer": cls.MANDATORY_DISCLAIMER
-        }
+        # Fallback to Pattern Engine
+        return cls._generate_local_pattern_response(
+            query=sanitized_query,
+            timeline_context=sanitized_context,
+            user_profile=user_profile
+        )

@@ -1,5 +1,5 @@
 import React from 'react'
-import { Activity, Clock, Network, FileText, MessageSquare, Stethoscope, Shield, PlusCircle, LogIn, UserCheck, LogOut } from 'lucide-react'
+import { Activity, Clock, Network, FileText, MessageSquare, Stethoscope, Shield, PlusCircle, LogIn, UserCheck, LogOut, KeyRound } from 'lucide-react'
 
 export default function Navbar({ activeTab, setActiveTab, user, onOpenAuth, onLogout, onOpenQuickLog }) {
   const navItems = [
@@ -83,13 +83,27 @@ export default function Navbar({ activeTab, setActiveTab, user, onOpenAuth, onLo
                 </button>
               </>
             ) : (
-              <button
-                onClick={onOpenAuth}
-                className="flex items-center gap-2 px-4 py-2 rounded-lg bg-amethyst-800 hover:bg-amethyst-700 text-white text-sm font-semibold border border-amethyst-600/40 transition-all shadow-md"
-              >
-                <LogIn className="w-4 h-4 text-rosegold-400" />
-                <span>Log In / Register</span>
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setActiveTab('login')}
+                  className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all shadow ${
+                    activeTab === 'login'
+                      ? 'bg-gradient-to-r from-amethyst-600 to-rosegold-600 text-white glow-purple'
+                      : 'bg-amethyst-900/80 hover:bg-amethyst-800 text-rosegold-300 border border-amethyst-700/60'
+                  }`}
+                >
+                  <KeyRound className="w-4 h-4 text-rosegold-400" />
+                  <span>Animated Login Portal</span>
+                </button>
+
+                <button
+                  onClick={onOpenAuth}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amethyst-800 hover:bg-amethyst-700 text-slate-200 text-xs font-semibold border border-amethyst-600/40 transition-all"
+                >
+                  <LogIn className="w-3.5 h-3.5 text-slate-400" />
+                  <span>Modal Login</span>
+                </button>
+              </div>
             )}
           </div>
 
@@ -120,3 +134,4 @@ export default function Navbar({ activeTab, setActiveTab, user, onOpenAuth, onLo
     </header>
   )
 }
+
