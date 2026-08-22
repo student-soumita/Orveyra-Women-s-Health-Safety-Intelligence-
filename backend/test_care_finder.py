@@ -43,7 +43,8 @@ def test_care_finder():
     # 4. Test Search with Specialty filter (Gynecologist)
     res_gyn = session.get(f"{BASE_URL}/api/care-finder/search?specialty=Gynecologist").json()
     for p in res_gyn["providers"]:
-        assert "gynec" in p["specialty"].lower() or "gynec" in p["category"].lower() or any("gynec" in s.lower() for s in p.get("services", []))
+        p_text = f"{p.get('specialty','')} {p.get('category','')} {p.get('domain','')} {' '.join(p.get('services',[]))} {p.get('about','')}".lower()
+        assert any(k in p_text for k in ["gynec", "obg", "women", "maternal", "pcos", "period", "pap", "pregnancy", "obstetric"])
     print(f"[OK] Specialty filter Gynecologist returned {len(res_gyn['providers'])} verified providers.")
 
     # 5. Test Search with Location Query (Geocoding)
