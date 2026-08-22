@@ -10,6 +10,7 @@ load_dotenv()
 from fastapi import FastAPI, Depends, HTTPException, status, Response, Request, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, EmailStr
 from sqlalchemy.orm import Session
 
@@ -1642,3 +1643,23 @@ def generate_incident_report(
         "disclaimer": "This report contains user-entered data only. It does not constitute legal advice, a diagnosis, or legal certification of evidence.",
         "incidents": report_items
     }
+
+# ---------------------------------------------------------
+# PRODUCTION CLOUD DEPLOYMENT STATIC FRONTEND ROUTER
+# ---------------------------------------------------------
+DIST_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "frontend", "dist"))
+ASSETS_DIR = os.path.join(DIST_DIR, "assets")
+
+if os.path.exists(ASSETS_DIR):
+    app.mount("/assets", StaticFiles(directory=ASSETS_DIR), name="static_assets")
+
+if os.path.exists(DIST_DIR):
+    @app.get("/{full_path:path}")
+    async def serve_production_spa(full_path: str):
+        if full_path.startswith("api/"):
+            raise HTTPException(status_code=404, detail="API endpoint not found")
+        target_file = os.path.join(DIST_DIR, full_path)
+        if os.path.exists(target_file) and os.path.isfile(target_file):
+            return FileResponse(target_file)
+        return FileResponse(os.path.join(DIST_DIR, "index.html"))
+
