@@ -17,17 +17,19 @@ from app.database import engine, Base, get_db
 from app.models.schema import (
     User, UserProfile, CycleLog, SymptomLog, LifestyleLog,
     BiomarkerLog, MedicationLog, DocumentVault, AIObservation,
-    AuditLog, DoctorShareToken
+    AuditLog, DoctorShareToken, CareSavedPlace, CareSearchHistory, CareShareLink,
+    TrustedContact, IncidentRecord, IncidentEvidence, IncidentEvent
 )
 from app.services.auth import (
     hash_password, verify_password, create_access_token,
-    get_current_user, log_audit
+    get_current_user, get_optional_current_user, log_audit
 )
 from app.services.body_drift import BodyDriftEngine
 from app.services.ai_engine import AIEngine, ConversationMemory
 from app.services.lab_parser import LabDocumentParser
 from app.services.vault import PresignedVaultService
 from app.services.doctor_mode import DoctorModeService
+from app.services.care_finder import CareFinderService
 from app.middleware.privacy import PIISanitizer
 
 # Initialize DB tables
@@ -197,10 +199,74 @@ def me(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
         "profile": {
             "full_name": profile.full_name if profile else None,
             "dob": profile.dob if profile else None,
+            "avatar_url": profile.avatar_url if profile else None,
+            "age": profile.age if profile else None,
+            "blood_group": profile.blood_group if profile else None,
+            "height_cm": profile.height_cm if profile else None,
+            "weight_kg": profile.weight_kg if profile else None,
+            "medical_conditions": profile.medical_conditions if profile else None,
+            "emergency_contact": profile.emergency_contact if profile else None,
             "typical_cycle_length": profile.typical_cycle_length if profile else 28,
             "typical_period_length": profile.typical_period_length if profile else 5,
             "baseline_notes": profile.baseline_notes if profile else None,
             "ai_processing_enabled": profile.ai_processing_enabled if profile else True
+        }
+    }
+
+class UpdateProfileRequest(BaseModel):
+    full_name: Optional[str] = None
+    dob: Optional[str] = None
+    avatar_url: Optional[str] = None
+    age: Optional[int] = None
+    blood_group: Optional[str] = None
+    height_cm: Optional[float] = None
+    weight_kg: Optional[float] = None
+    medical_conditions: Optional[str] = None
+    emergency_contact: Optional[str] = None
+    typical_cycle_length: Optional[int] = 28
+    typical_period_length: Optional[int] = 5
+    baseline_notes: Optional[str] = None
+
+@app.post("/api/profile/update")
+def update_profile(req: UpdateProfileRequest, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    profile = db.query(UserProfile).filter(UserProfile.user_id == user.id).first()
+    if not profile:
+        profile = UserProfile(user_id=user.id)
+        db.add(profile)
+
+    if req.full_name is not None: profile.full_name = req.full_name
+    if req.dob is not None: profile.dob = req.dob
+    if req.avatar_url is not None: profile.avatar_url = req.avatar_url
+    if req.age is not None: profile.age = req.age
+    if req.blood_group is not None: profile.blood_group = req.blood_group
+    if req.height_cm is not None: profile.height_cm = req.height_cm
+    if req.weight_kg is not None: profile.weight_kg = req.weight_kg
+    if req.medical_conditions is not None: profile.medical_conditions = req.medical_conditions
+    if req.emergency_contact is not None: profile.emergency_contact = req.emergency_contact
+    if req.typical_cycle_length is not None: profile.typical_cycle_length = req.typical_cycle_length
+    if req.typical_period_length is not None: profile.typical_period_length = req.typical_period_length
+    if req.baseline_notes is not None: profile.baseline_notes = req.baseline_notes
+
+    db.commit()
+    db.refresh(profile)
+    log_audit(db, user.id, "PROFILE_UPDATED")
+
+    return {
+        "message": "Profile updated successfully",
+        "profile": {
+            "full_name": profile.full_name,
+            "dob": profile.dob,
+            "avatar_url": profile.avatar_url,
+            "age": profile.age,
+            "blood_group": profile.blood_group,
+            "height_cm": profile.height_cm,
+            "weight_kg": profile.weight_kg,
+            "medical_conditions": profile.medical_conditions,
+            "emergency_contact": profile.emergency_contact,
+            "typical_cycle_length": profile.typical_cycle_length,
+            "typical_period_length": profile.typical_period_length,
+            "baseline_notes": profile.baseline_notes,
+            "ai_processing_enabled": profile.ai_processing_enabled
         }
     }
 
@@ -542,6 +608,28 @@ def download_vault_file(
 
     return FileResponse(doc.file_path, media_type=doc.mime_type, filename=doc.filename)
 
+@app.delete("/api/vault/documents/{document_id}")
+def delete_vault_document(
+    document_id: int,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    doc = db.query(DocumentVault).filter(DocumentVault.id == document_id, DocumentVault.user_id == user.id).first()
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    # Delete physical file from disk if it exists
+    try:
+        if doc.file_path and os.path.exists(doc.file_path):
+            os.remove(doc.file_path)
+    except Exception as e:
+        print(f"[Vault] Could not delete physical file: {e}")
+
+    db.delete(doc)
+    db.commit()
+    log_audit(db, user.id, "DOCUMENT_DELETE", endpoint=f"/api/vault/documents/{document_id}")
+    return {"message": "Document deleted successfully", "document_id": document_id}
+
 # ---------------------------------------------------------
 # DETERMINISTIC BODY DRIFT & AI ENGINE ENDPOINTS
 # ---------------------------------------------------------
@@ -638,14 +726,14 @@ def set_gemini_api_key(req: SetKeyRequest, user: User = Depends(get_current_user
     except Exception as e:
         print(f"[Main] Error writing to .env: {e}")
 
-    # Force re-initialization of the model instance
+    # Force re-initialization of the client
     AIEngine._configured_key = None
-    AIEngine._model_instance = None
+    AIEngine._client = None
     
-    model = AIEngine._get_model()
+    client = AIEngine._get_model()
     log_audit(db, user.id, "SET_GEMINI_API_KEY")
-    if model:
-        return {"message": f"Google Gemini API connected successfully to model {AIEngine._model_name}!", "connected": True, "model": AIEngine._model_name}
+    if client:
+        return {"message": f"Google Gemini API connected successfully (model: {AIEngine._model_name})!", "connected": True, "model": AIEngine._model_name}
     else:
         return {"message": "API key saved, but Gemini connection failed. Please check key validity.", "connected": False}
 
@@ -846,3 +934,711 @@ def delete_data_stream(stream_name: str, user: User = Depends(get_current_user),
     db.commit()
     log_audit(db, user.id, f"DELETE_STREAM_{sn.upper()}")
     return {"message": f"Data stream '{stream_name}' cleared successfully."}
+
+
+# ---------------------------------------------------------
+# CARE FINDER API ENDPOINTS (MODULAR HEALTHCARE DISCOVERY)
+# ---------------------------------------------------------
+
+class CareSavedRequest(BaseModel):
+    provider_id: str
+    name: str
+    specialty: str
+    facility_name: Optional[str] = None
+    address: str
+    phone: Optional[str] = None
+    rating: Optional[float] = None
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
+
+class CareShareRequest(BaseModel):
+    provider_id: str
+    provider_name: str
+    shared_sections: List[str] # ["cycle", "symptoms", "biomarkers", "doctor_mode", "medications"]
+    duration_hours: int = 48
+
+@app.get("/api/care-finder/search")
+def search_care_providers(
+    query: Optional[str] = None,
+    lat: Optional[float] = None,
+    lon: Optional[float] = None,
+    location_name: Optional[str] = None,
+    specialty: Optional[str] = None,
+    radius: float = 25.0,
+    open_now: Optional[bool] = None,
+    consultation_type: Optional[str] = None,
+    user: Optional[User] = Depends(get_optional_current_user),
+    db: Session = Depends(get_db)
+):
+    loc_q = location_name or query
+    results = CareFinderService.search_providers(
+        lat=lat,
+        lon=lon,
+        location_query=loc_q,
+        specialty=specialty,
+        radius_km=radius,
+        open_now=open_now,
+        consultation_type=consultation_type
+    )
+
+    # Save to search history if authenticated
+    if user and (query or location_name):
+        try:
+            h = CareSearchHistory(
+                user_id=user.id,
+                query=query,
+                location_name=location_name,
+                specialty=specialty
+            )
+            db.add(h)
+            db.commit()
+        except Exception:
+            db.rollback()
+
+    return results
+
+@app.get("/api/care-finder/provider/{provider_id}")
+def get_care_provider_details(provider_id: str):
+    prov = CareFinderService.get_provider_by_id(provider_id)
+    if not prov:
+        raise HTTPException(status_code=404, detail="Provider information unavailable.")
+    return prov
+
+@app.get("/api/care-finder/saved")
+def get_saved_providers(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    saved = db.query(CareSavedPlace).filter(CareSavedPlace.user_id == user.id).order_by(CareSavedPlace.created_at.desc()).all()
+    return saved
+
+@app.post("/api/care-finder/saved")
+def save_provider(req: CareSavedRequest, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    existing = db.query(CareSavedPlace).filter(
+        CareSavedPlace.user_id == user.id,
+        CareSavedPlace.provider_id == req.provider_id
+    ).first()
+    if existing:
+        return {"message": "Provider already saved in your care list.", "id": existing.id}
+
+    saved = CareSavedPlace(
+        user_id=user.id,
+        provider_id=req.provider_id,
+        name=req.name,
+        specialty=req.specialty,
+        facility_name=req.facility_name,
+        address=req.address,
+        phone=req.phone,
+        rating=req.rating,
+        latitude=req.latitude,
+        longitude=req.longitude
+    )
+    db.add(saved)
+    db.commit()
+    db.refresh(saved)
+    return saved
+
+@app.delete("/api/care-finder/saved/{provider_id}")
+def remove_saved_provider(provider_id: str, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    db.query(CareSavedPlace).filter(
+        CareSavedPlace.user_id == user.id,
+        CareSavedPlace.provider_id == provider_id
+    ).delete()
+    db.commit()
+    return {"message": "Provider removed from saved list."}
+
+@app.get("/api/care-finder/history")
+def get_care_search_history(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    history = db.query(CareSearchHistory).filter(
+        CareSearchHistory.user_id == user.id
+    ).order_by(CareSearchHistory.created_at.desc()).limit(10).all()
+    return history
+
+@app.delete("/api/care-finder/history")
+def clear_care_search_history(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    db.query(CareSearchHistory).filter(CareSearchHistory.user_id == user.id).delete()
+    db.commit()
+    return {"message": "Care search history cleared."}
+
+@app.post("/api/care-finder/share")
+def create_care_share_link(req: CareShareRequest, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    import uuid
+    token = str(uuid.uuid4())[:16]
+    expires = datetime.datetime.utcnow() + datetime.timedelta(hours=req.duration_hours)
+
+    link = CareShareLink(
+        user_id=user.id,
+        token=token,
+        provider_id=req.provider_id,
+        provider_name=req.provider_name,
+        shared_sections_json=json.dumps(req.shared_sections),
+        expires_at=expires
+    )
+    db.add(link)
+    db.commit()
+    db.refresh(link)
+
+    log_audit(db, user.id, f"CARE_SHARE_TOKEN_CREATED:{token}")
+
+    return {
+        "token": token,
+        "provider_name": req.provider_name,
+        "shared_sections": req.shared_sections,
+        "expires_at": expires.isoformat(),
+        "share_url": f"/care-summary/{token}"
+    }
+
+@app.delete("/api/care-finder/share/{token}")
+def revoke_care_share_link(token: str, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    link = db.query(CareShareLink).filter(
+        CareShareLink.user_id == user.id,
+        CareShareLink.token == token
+    ).first()
+    if not link:
+        raise HTTPException(status_code=404, detail="Share token not found.")
+
+    link.is_revoked = True
+    db.commit()
+    log_audit(db, user.id, f"CARE_SHARE_TOKEN_REVOKED:{token}")
+    return {"message": "Access revoked successfully."}
+
+@app.get("/api/care-finder/shared-view/{token}")
+def view_shared_care_summary(token: str, db: Session = Depends(get_db)):
+    link = db.query(CareShareLink).filter(CareShareLink.token == token).first()
+    if not link:
+        raise HTTPException(status_code=404, detail="Share link not found or expired.")
+
+    if link.is_revoked:
+        raise HTTPException(status_code=403, detail="This health share link has been revoked by the patient.")
+
+    if datetime.datetime.utcnow() > link.expires_at:
+        raise HTTPException(status_code=403, detail="This temporary share link has expired.")
+
+    link.access_count += 1
+    db.commit()
+
+    shared_sections = json.loads(link.shared_sections_json)
+    user_id = link.user_id
+
+    resp = {
+        "patient_id": f"PATIENT-{user_id:04d}",
+        "authorized_provider": link.provider_name,
+        "expires_at": link.expires_at.isoformat(),
+        "data": {}
+    }
+
+    if "cycle" in shared_sections:
+        cycles = db.query(CycleLog).filter(CycleLog.user_id == user_id).order_by(CycleLog.start_date.desc()).limit(6).all()
+        resp["data"]["cycle_summary"] = [
+            {"start_date": c.start_date, "end_date": c.end_date, "flow": c.flow_intensity} for c in cycles
+        ]
+
+    if "symptoms" in shared_sections:
+        symptoms = db.query(SymptomLog).filter(SymptomLog.user_id == user_id).order_by(SymptomLog.date.desc()).limit(15).all()
+        resp["data"]["symptoms_summary"] = [
+            {"date": s.date, "symptom": s.symptom_name, "severity": s.severity, "category": s.category} for s in symptoms
+        ]
+
+    if "biomarkers" in shared_sections:
+        biomarkers = db.query(BiomarkerLog).filter(BiomarkerLog.user_id == user_id).order_by(BiomarkerLog.date.desc()).limit(10).all()
+        resp["data"]["biomarkers_summary"] = [
+            {"date": b.date, "test": b.test_name, "value": b.numeric_value, "unit": b.unit, "reference_range": b.reference_range} for b in biomarkers
+        ]
+
+    if "medications" in shared_sections:
+        meds = db.query(MedicationLog).filter(MedicationLog.user_id == user_id).all()
+        resp["data"]["medications_summary"] = [
+            {"name": m.medication_name, "dosage": m.dosage, "frequency": m.frequency} for m in meds
+        ]
+
+    return resp
+
+
+# ---------------------------------------------------------
+# IMMEDIATE HELP API ENDPOINTS (SAFETY LAYER — APPEND ONLY)
+# ---------------------------------------------------------
+
+import hashlib
+import uuid as _uuid
+
+SAFETY_VAULT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "safety_vault")
+os.makedirs(SAFETY_VAULT_DIR, exist_ok=True)
+
+# --- Pydantic schemas ---
+
+class TrustedContactCreate(BaseModel):
+    name: str
+    phone: Optional[str] = None
+    relationship_label: Optional[str] = None
+    custom_label: Optional[str] = None
+
+class TrustedContactUpdate(BaseModel):
+    name: Optional[str] = None
+    phone: Optional[str] = None
+    relationship_label: Optional[str] = None
+    custom_label: Optional[str] = None
+
+class IncidentCreate(BaseModel):
+    description: Optional[str] = None
+    category: Optional[str] = None
+    location_text: Optional[str] = None
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
+    incident_at: Optional[str] = None  # ISO datetime string; defaults to now
+
+class IncidentUpdate(BaseModel):
+    description: Optional[str] = None
+    category: Optional[str] = None
+    location_text: Optional[str] = None
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
+    status: Optional[str] = None
+    include_in_doctor_report: Optional[bool] = None
+
+class ShareSituationRequest(BaseModel):
+    contact_ids: List[int] = []
+    message: str = "I may need help. Please check on me."
+    include_location: bool = False
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
+
+
+# --- Trusted Contacts ---
+
+@app.get("/api/immediate-help/trusted-contacts")
+def get_trusted_contacts(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    contacts = db.query(TrustedContact).filter(TrustedContact.user_id == user.id).order_by(TrustedContact.created_at.desc()).all()
+    return [
+        {
+            "id": c.id,
+            "name": c.name,
+            "phone": c.phone,
+            "relationship_label": c.relationship_label,
+            "custom_label": c.custom_label,
+            "created_at": c.created_at.isoformat() if c.created_at else None
+        }
+        for c in contacts
+    ]
+
+@app.post("/api/immediate-help/trusted-contacts")
+def create_trusted_contact(req: TrustedContactCreate, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    contact = TrustedContact(
+        user_id=user.id,
+        name=req.name,
+        phone=req.phone,
+        relationship_label=req.relationship_label,
+        custom_label=req.custom_label
+    )
+    db.add(contact)
+    db.commit()
+    db.refresh(contact)
+    log_audit(db, user.id, "TRUSTED_CONTACT_ADDED")
+    return {"id": contact.id, "name": contact.name, "message": "Trusted contact added."}
+
+@app.patch("/api/immediate-help/trusted-contacts/{contact_id}")
+def update_trusted_contact(contact_id: int, req: TrustedContactUpdate, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    contact = db.query(TrustedContact).filter(TrustedContact.id == contact_id, TrustedContact.user_id == user.id).first()
+    if not contact:
+        raise HTTPException(status_code=404, detail="Trusted contact not found.")
+    if req.name is not None: contact.name = req.name
+    if req.phone is not None: contact.phone = req.phone
+    if req.relationship_label is not None: contact.relationship_label = req.relationship_label
+    if req.custom_label is not None: contact.custom_label = req.custom_label
+    db.commit()
+    db.refresh(contact)
+    log_audit(db, user.id, f"TRUSTED_CONTACT_UPDATED:{contact_id}")
+    return {"id": contact.id, "name": contact.name, "message": "Trusted contact updated."}
+
+@app.delete("/api/immediate-help/trusted-contacts/{contact_id}")
+def delete_trusted_contact(contact_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    contact = db.query(TrustedContact).filter(TrustedContact.id == contact_id, TrustedContact.user_id == user.id).first()
+    if not contact:
+        raise HTTPException(status_code=404, detail="Trusted contact not found.")
+    db.delete(contact)
+    db.commit()
+    log_audit(db, user.id, f"TRUSTED_CONTACT_DELETED:{contact_id}")
+    return {"message": "Trusted contact removed."}
+
+
+# --- Incident Records ---
+
+def _add_incident_event(db: Session, user_id: int, incident_id: int, event_type: str, label: str):
+    """Helper: append a Panic Timeline event for an incident."""
+    evt = IncidentEvent(
+        user_id=user_id,
+        incident_id=incident_id,
+        event_type=event_type,
+        label=label
+    )
+    db.add(evt)
+    db.commit()
+
+@app.post("/api/immediate-help/incidents")
+def create_incident(req: IncidentCreate, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    incident_at = datetime.datetime.utcnow()
+    if req.incident_at:
+        try:
+            incident_at = datetime.datetime.fromisoformat(req.incident_at.replace("Z", "+00:00"))
+        except Exception:
+            pass
+
+    incident = IncidentRecord(
+        user_id=user.id,
+        description=req.description,
+        category=req.category,
+        location_text=req.location_text,
+        latitude=req.latitude,
+        longitude=req.longitude,
+        incident_at=incident_at
+    )
+    db.add(incident)
+    db.commit()
+    db.refresh(incident)
+
+    _add_incident_event(db, user.id, incident.id, "OPENED", "Immediate Help incident created")
+    if req.description:
+        _add_incident_event(db, user.id, incident.id, "NOTE_ADDED", "Incident note recorded")
+    if req.latitude and req.longitude:
+        _add_incident_event(db, user.id, incident.id, "LOCATION_SHARED", "Location included with incident")
+
+    log_audit(db, user.id, f"INCIDENT_CREATED:{incident.id}")
+    return {
+        "id": incident.id,
+        "category": incident.category,
+        "incident_at": incident.incident_at.isoformat(),
+        "message": "Incident recorded."
+    }
+
+@app.get("/api/immediate-help/incidents")
+def get_incidents(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    incidents = db.query(IncidentRecord).filter(
+        IncidentRecord.user_id == user.id
+    ).order_by(IncidentRecord.incident_at.desc()).all()
+    return [
+        {
+            "id": i.id,
+            "description": i.description,
+            "category": i.category,
+            "location_text": i.location_text,
+            "latitude": i.latitude,
+            "longitude": i.longitude,
+            "incident_at": i.incident_at.isoformat() if i.incident_at else None,
+            "status": i.status,
+            "include_in_doctor_report": i.include_in_doctor_report,
+            "created_at": i.created_at.isoformat() if i.created_at else None,
+            "evidence_count": len(i.evidence),
+            "event_count": len(i.events)
+        }
+        for i in incidents
+    ]
+
+@app.get("/api/immediate-help/incidents/{incident_id}")
+def get_incident_detail(incident_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    incident = db.query(IncidentRecord).filter(
+        IncidentRecord.id == incident_id, IncidentRecord.user_id == user.id
+    ).first()
+    if not incident:
+        raise HTTPException(status_code=404, detail="Incident not found.")
+    return {
+        "id": incident.id,
+        "description": incident.description,
+        "category": incident.category,
+        "location_text": incident.location_text,
+        "latitude": incident.latitude,
+        "longitude": incident.longitude,
+        "incident_at": incident.incident_at.isoformat() if incident.incident_at else None,
+        "status": incident.status,
+        "include_in_doctor_report": incident.include_in_doctor_report,
+        "created_at": incident.created_at.isoformat() if incident.created_at else None,
+        "evidence": [
+            {
+                "id": e.id,
+                "filename": e.filename,
+                "mime_type": e.mime_type,
+                "file_size_bytes": e.file_size_bytes,
+                "sha256_hash": e.sha256_hash,
+                "uploaded_at": e.uploaded_at.isoformat() if e.uploaded_at else None
+            }
+            for e in incident.evidence
+        ],
+        "events": [
+            {
+                "id": ev.id,
+                "event_type": ev.event_type,
+                "label": ev.label,
+                "event_at": ev.event_at.isoformat() if ev.event_at else None
+            }
+            for ev in incident.events
+        ]
+    }
+
+@app.patch("/api/immediate-help/incidents/{incident_id}")
+def update_incident(incident_id: int, req: IncidentUpdate, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    incident = db.query(IncidentRecord).filter(
+        IncidentRecord.id == incident_id, IncidentRecord.user_id == user.id
+    ).first()
+    if not incident:
+        raise HTTPException(status_code=404, detail="Incident not found.")
+
+    if req.description is not None:
+        incident.description = req.description
+        _add_incident_event(db, user.id, incident.id, "NOTE_ADDED", "Incident description updated")
+    if req.category is not None: incident.category = req.category
+    if req.location_text is not None: incident.location_text = req.location_text
+    if req.latitude is not None: incident.latitude = req.latitude
+    if req.longitude is not None: incident.longitude = req.longitude
+    if req.status is not None: incident.status = req.status
+    if req.include_in_doctor_report is not None: incident.include_in_doctor_report = req.include_in_doctor_report
+
+    db.commit()
+    db.refresh(incident)
+    log_audit(db, user.id, f"INCIDENT_UPDATED:{incident_id}")
+    return {"id": incident.id, "message": "Incident updated."}
+
+@app.delete("/api/immediate-help/incidents/{incident_id}")
+def delete_incident(incident_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    incident = db.query(IncidentRecord).filter(
+        IncidentRecord.id == incident_id, IncidentRecord.user_id == user.id
+    ).first()
+    if not incident:
+        raise HTTPException(status_code=404, detail="Incident not found.")
+
+    # Delete evidence files from disk
+    for ev in incident.evidence:
+        try:
+            if os.path.exists(ev.file_path):
+                os.remove(ev.file_path)
+        except Exception:
+            pass
+
+    db.delete(incident)  # cascade deletes evidence + events
+    db.commit()
+    log_audit(db, user.id, f"INCIDENT_DELETED:{incident_id}")
+    return {"message": "Incident and associated evidence permanently deleted."}
+
+
+# --- Evidence Upload / Download / Delete ---
+
+@app.post("/api/immediate-help/evidence")
+async def upload_evidence(
+    incident_id: int = Form(...),
+    file: UploadFile = File(...),
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    # Verify incident belongs to user
+    incident = db.query(IncidentRecord).filter(
+        IncidentRecord.id == incident_id, IncidentRecord.user_id == user.id
+    ).first()
+    if not incident:
+        raise HTTPException(status_code=404, detail="Incident not found.")
+
+    # Read file and compute SHA-256
+    contents = await file.read()
+    sha256 = hashlib.sha256(contents).hexdigest()
+
+    ext = os.path.splitext(file.filename)[1] if file.filename else ""
+    stored_name = f"{_uuid.uuid4().hex}{ext}"
+    stored_path = os.path.join(SAFETY_VAULT_DIR, stored_name)
+
+    with open(stored_path, "wb") as f:
+        f.write(contents)
+
+    evidence = IncidentEvidence(
+        user_id=user.id,
+        incident_id=incident_id,
+        filename=file.filename or "untitled",
+        stored_filename=stored_name,
+        file_path=stored_path,
+        mime_type=file.content_type,
+        file_size_bytes=len(contents),
+        sha256_hash=sha256
+    )
+    db.add(evidence)
+    db.commit()
+    db.refresh(evidence)
+
+    _add_incident_event(db, user.id, incident_id, "EVIDENCE_ADDED", f"Evidence uploaded: {file.filename}")
+    log_audit(db, user.id, f"EVIDENCE_UPLOADED:{evidence.id}")
+
+    return {
+        "id": evidence.id,
+        "filename": evidence.filename,
+        "sha256_hash": sha256,
+        "file_size_bytes": len(contents),
+        "message": "Evidence uploaded. Integrity metadata recorded."
+    }
+
+@app.get("/api/immediate-help/evidence/{evidence_id}/download")
+def download_evidence(evidence_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    evidence = db.query(IncidentEvidence).filter(
+        IncidentEvidence.id == evidence_id, IncidentEvidence.user_id == user.id
+    ).first()
+    if not evidence:
+        raise HTTPException(status_code=404, detail="Evidence not found.")
+    if not os.path.exists(evidence.file_path):
+        raise HTTPException(status_code=404, detail="Evidence file missing from vault.")
+
+    log_audit(db, user.id, f"EVIDENCE_DOWNLOADED:{evidence_id}")
+    return FileResponse(
+        path=evidence.file_path,
+        filename=evidence.filename,
+        media_type=evidence.mime_type or "application/octet-stream"
+    )
+
+@app.delete("/api/immediate-help/evidence/{evidence_id}")
+def delete_evidence(evidence_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    evidence = db.query(IncidentEvidence).filter(
+        IncidentEvidence.id == evidence_id, IncidentEvidence.user_id == user.id
+    ).first()
+    if not evidence:
+        raise HTTPException(status_code=404, detail="Evidence not found.")
+
+    try:
+        if os.path.exists(evidence.file_path):
+            os.remove(evidence.file_path)
+    except Exception:
+        pass
+
+    db.delete(evidence)
+    db.commit()
+    log_audit(db, user.id, f"EVIDENCE_DELETED:{evidence_id}")
+    return {"message": "Evidence permanently deleted."}
+
+
+# --- Share My Situation ---
+
+@app.post("/api/immediate-help/share")
+def share_situation(req: ShareSituationRequest, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Generates a share payload for the user to send via their device sharing mechanism.
+    Does NOT automatically send messages — the frontend uses Web Share API or shows info."""
+    contacts = []
+    if req.contact_ids:
+        contacts = db.query(TrustedContact).filter(
+            TrustedContact.id.in_(req.contact_ids),
+            TrustedContact.user_id == user.id
+        ).all()
+
+    location_info = None
+    if req.include_location and req.latitude and req.longitude:
+        location_info = {
+            "latitude": req.latitude,
+            "longitude": req.longitude,
+            "maps_url": f"https://www.google.com/maps?q={req.latitude},{req.longitude}"
+        }
+
+    # Create an incident event for the share action
+    recent = db.query(IncidentRecord).filter(
+        IncidentRecord.user_id == user.id
+    ).order_by(IncidentRecord.created_at.desc()).first()
+    if recent:
+        _add_incident_event(db, user.id, recent.id, "SITUATION_SHARED", f"Situation shared with {len(contacts)} contact(s)")
+
+    log_audit(db, user.id, "SITUATION_SHARED")
+
+    return {
+        "message": req.message,
+        "contacts": [
+            {"name": c.name, "phone": c.phone, "relationship": c.relationship_label}
+            for c in contacts
+        ],
+        "location": location_info,
+        "share_text": f"{req.message}" + (f"\nLocation: {location_info['maps_url']}" if location_info else "")
+    }
+
+
+# --- Panic Timeline (read-only: events are created automatically by other actions) ---
+
+@app.get("/api/immediate-help/incidents/{incident_id}/timeline")
+def get_panic_timeline(incident_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    incident = db.query(IncidentRecord).filter(
+        IncidentRecord.id == incident_id, IncidentRecord.user_id == user.id
+    ).first()
+    if not incident:
+        raise HTTPException(status_code=404, detail="Incident not found.")
+
+    events = db.query(IncidentEvent).filter(
+        IncidentEvent.incident_id == incident_id
+    ).order_by(IncidentEvent.event_at.asc()).all()
+
+    return {
+        "incident_id": incident_id,
+        "incident_at": incident.incident_at.isoformat() if incident.incident_at else None,
+        "events": [
+            {
+                "id": e.id,
+                "event_type": e.event_type,
+                "label": e.label,
+                "event_at": e.event_at.isoformat() if e.event_at else None
+            }
+            for e in events
+        ]
+    }
+
+
+# --- Emergency Call Log (records the user's intent — does NOT make a call) ---
+
+@app.post("/api/immediate-help/emergency-call-log")
+def log_emergency_call(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Records that the user selected emergency call. The actual call is placed by the device."""
+    recent = db.query(IncidentRecord).filter(
+        IncidentRecord.user_id == user.id
+    ).order_by(IncidentRecord.created_at.desc()).first()
+    if recent:
+        _add_incident_event(db, user.id, recent.id, "CALL_SELECTED", "Emergency call selected")
+    log_audit(db, user.id, "EMERGENCY_CALL_SELECTED")
+    return {"message": "Emergency call action logged."}
+
+
+# --- Incident Report Download ---
+
+@app.post("/api/immediate-help/report")
+def generate_incident_report(
+    incident_ids: List[int] = [],
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Generate a structured incident summary report for selected incidents.
+    No accusations, no diagnoses. Factual user-entered data only."""
+    incidents = db.query(IncidentRecord).filter(
+        IncidentRecord.id.in_(incident_ids),
+        IncidentRecord.user_id == user.id
+    ).order_by(IncidentRecord.incident_at.desc()).all()
+
+    report_items = []
+    for inc in incidents:
+        events = db.query(IncidentEvent).filter(
+            IncidentEvent.incident_id == inc.id
+        ).order_by(IncidentEvent.event_at.asc()).all()
+
+        evidence_refs = db.query(IncidentEvidence).filter(
+            IncidentEvidence.incident_id == inc.id
+        ).all()
+
+        report_items.append({
+            "incident_id": inc.id,
+            "incident_at": inc.incident_at.isoformat() if inc.incident_at else None,
+            "category": inc.category,
+            "description": inc.description,
+            "location_text": inc.location_text,
+            "status": inc.status,
+            "timeline_events": [
+                {"time": e.event_at.isoformat() if e.event_at else None, "type": e.event_type, "label": e.label}
+                for e in events
+            ],
+            "evidence_references": [
+                {
+                    "filename": ev.filename,
+                    "file_type": ev.mime_type,
+                    "sha256_hash": ev.sha256_hash,
+                    "uploaded_at": ev.uploaded_at.isoformat() if ev.uploaded_at else None
+                }
+                for ev in evidence_refs
+            ]
+        })
+
+    log_audit(db, user.id, f"INCIDENT_REPORT_GENERATED:{len(report_items)}_incidents")
+
+    return {
+        "report_type": "Incident Summary",
+        "generated_at": datetime.datetime.utcnow().isoformat(),
+        "disclaimer": "This report contains user-entered data only. It does not constitute legal advice, a diagnosis, or legal certification of evidence.",
+        "incidents": report_items
+    }

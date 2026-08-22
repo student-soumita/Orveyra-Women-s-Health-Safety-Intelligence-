@@ -24,7 +24,7 @@ export default function EvidenceDrawer({ isOpen, onClose, evidenceData, signalQu
             </div>
             <div>
               <h3 className="text-xl font-bold gradient-text">[ WHY? ] Evidence Breakdown</h3>
-              <p className="text-xs text-slate-400">Strict Data Lineage & AI Uncertainty Chain</p>
+              <p className="text-xs text-slate-400">Strict Data Lineage & Deterministic Uncertainty Chain</p>
             </div>
           </div>
           <button

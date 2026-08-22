@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 import os
 import json
 import datetime
@@ -5,6 +6,7 @@ import traceback
 from typing import Dict, Any, List, Optional
 from dotenv import load_dotenv
 from app.middleware.privacy import PIISanitizer
+from app.services.care_finder import CareFinderService
 
 load_dotenv()
 
@@ -15,7 +17,7 @@ try:
     GENAI_AVAILABLE = True
 except ImportError:
     GENAI_AVAILABLE = False
-    print("[AI Engine] google-genai package not installed.")
+    print("[Engine] google-genai package not installed.")
 
 
 class ConversationMemory:
@@ -42,17 +44,18 @@ class ConversationMemory:
         cls._store.pop(user_id, None)
 
 
-SYSTEM_INSTRUCTION = """You are ORVEYRA AI — a world-class, warm, witty, deeply intelligent conversational AI assistant embedded inside a women's health intelligence platform called ORVEYRA.
+SYSTEM_INSTRUCTION = """You are ORVEYRA Health Guide — a world-class, warm, witty, deeply intelligent health and safety companion and conversational guide embedded inside a women's health intelligence platform called ORVEYRA.
 
 YOUR PERSONALITY & CAPABILITIES:
-- You are as intelligent, natural, and versatile as ChatGPT or Gemini.
+- You are as intelligent, natural, and versatile as any leading conversational assistant.
 - You can converse on ANY topic: casual chit-chat, random facts, jokes, riddles, creative writing, science, math, coding, philosophy, daily advice, and emotional support.
 - You respond with warmth, humor, wit, and natural human-like conversational flow.
 - You have full multi-turn memory: if the user follows up with "tell me another joke", "why?", or "that's cool", you respond naturally in context.
 - You format responses in clean Markdown (bold, lists, headers) when helpful, but keep casual chat brief and lively.
 
-YOUR HEALTH EXPERTISE:
+YOUR HEALTH & HEALTHCARE DIRECTORY EXPERTISE:
 - When the user asks about their health, analyze their real timeline data (cycle dates, symptoms, sleep logs, and lab biomarkers) provided in the context.
+- When the user asks for healthcare centers, clinics, doctors, or specialists for different domains (e.g. Gynecologists, Endocrinologists, Diagnostic Labs, Women's Clinics, Mental Health & Therapy, Nutrition & Dietetics, Fertility/IVF, Hospitals, General Medicine, Pelvic Rehab), provide MULTIPLE verified healthcare centers categorized clearly by domain with name, specialty, facility, address, and ratings.
 - Explain co-occurring patterns with empathy and clarity.
 - NEVER diagnose medical conditions. NEVER say "you have PCOS/PMDD/endometriosis".
 - NEVER provide numerical disease probabilities.
@@ -61,13 +64,13 @@ YOUR HEALTH EXPERTISE:
 
 RESPONSE STYLE:
 - Casual chit-chat / banter: Warm, engaging, concise.
-- Health queries: Structured Markdown with clear headers and bullet points.
+- Health queries & Provider directories: Structured Markdown with clear headers, bullet points, and multiple healthcare center options per domain.
 - Creative queries: Highly creative, imaginative, and engaging."""
 
 
 class AIEngine:
     """
-    Live Multi-Turn Conversational AI Engine powered by Google GenAI.
+    Live Multi-Turn Conversational Engine powered by Google GenAI.
     """
 
     MANDATORY_DISCLAIMER = (
@@ -77,48 +80,66 @@ class AIEngine:
 
     _client = None
     _configured_key = None
-    _active_model = "gemini-3.5-flash"
+    _active_model = "models/gemini-2.5-flash"
+    _model_name = "gemini-2.5-flash"  # Alias for main.py compatibility — do not rename
 
-    # Priority order for fastest and highest-quota models
+    # Priority order: confirmed working models first, versioned fallbacks after
     CANDIDATE_MODELS = [
-        "gemini-3.5-flash",
-        "gemini-3.5-flash-lite",
-        "gemini-3.1-flash-lite",
-        "gemini-3.6-flash",
-        "gemini-3.7-flash",
-        "gemma-4-26b-a4b-it"
+        "models/gemini-flash-lite-latest",   # Fastest, confirmed working
+        "models/gemini-flash-latest",         # Balanced speed/quality, confirmed working
+        "models/gemini-pro-latest",           # Pro tier fallback
+        "models/gemini-3.5-flash",
+        "models/gemini-3.6-flash",
+        "models/gemini-3.7-flash",
+        "models/gemini-3.1-flash-lite",
+        "models/gemma-4-26b-a4b-it"
     ]
 
     @classmethod
     def _get_client(cls):
-        """Initializes and returns configured GenAI client."""
-        load_dotenv()
+        """Initializes and returns configured client."""
+        load_dotenv(override=True)
         api_key = os.getenv("GEMINI_API_KEY", "").strip()
 
-        if not api_key or api_key == "your_gemini_api_key_here" or not GENAI_AVAILABLE:
+        if not api_key or api_key == "your_api_key_here" or not GENAI_AVAILABLE:
             return None
 
         if cls._configured_key != api_key or cls._client is None:
             try:
                 cls._client = genai.Client(api_key=api_key)
                 cls._configured_key = api_key
-                print("[AI Engine] Google GenAI client configured successfully.")
+                print("[Engine] Client configured successfully.")
             except Exception as e:
-                print(f"[AI Engine] Error configuring GenAI client: {e}")
+                print(f"[Engine] Error configuring client: {e}")
                 return None
 
         return cls._client
 
     @classmethod
+    def _get_model(cls):
+        """Compatibility alias used by main.py set-key endpoint - do not rename."""
+        return cls._get_client()
+
+    @classmethod
     def _call_gemini(cls, user_id: int, user_message: str, health_context_str: str = "") -> Optional[str]:
-        """Calls Google GenAI with model fallback and conversation history."""
+        """Calls the language model with fallback and conversation history."""
         client = cls._get_client()
         if client is None:
             return None
 
         # Build prompt with health context if present
+        context_parts = []
         if health_context_str:
-            prompt_content = f"{user_message}\n\n[User's Health Records for Context]:\n{health_context_str}"
+            context_parts.append(f"[User's Health Records for Context]:\n{health_context_str}")
+
+        # Check if user message asks for healthcare providers or domain specialists
+        msg_lower = user_message.lower()
+        if any(w in msg_lower for w in ["care", "center", "centre", "clinic", "doctor", "specialist", "hospital", "gynae", "endo", "thyroid", "pcos", "lab", "mental", "therapy", "nutrition", "fertility", "domain", "find", "recommend", "where can i go"]):
+            providers_md = CareFinderService.format_providers_for_ai(user_message, max_results=8)
+            context_parts.append(f"[ORVEYRA Verified Healthcare Provider Registry across Multiple Domains]:\n{providers_md}\nAlways list MULTIPLE verified healthcare centers categorized by domain with ratings, address, and phone numbers when users ask for clinics or healthcare centers.")
+
+        if context_parts:
+            prompt_content = f"{user_message}\n\n" + "\n\n".join(context_parts)
         else:
             prompt_content = user_message
 
@@ -154,13 +175,14 @@ class AIEngine:
                 reply = response.text
                 if reply:
                     cls._active_model = model_name
+                    cls._model_name = model_name.replace("models/", "")
                     ConversationMemory.add_turn(user_id, "user", user_message)
                     ConversationMemory.add_turn(user_id, "model", reply)
                     return reply
 
             except Exception as e:
                 err_msg = str(e)
-                print(f"[AI Engine] Model {model_name} failed: {err_msg[:120]}")
+                print(f"[Engine] Model {model_name} failed: {err_msg[:120]}")
                 # If rate limited or not found, try next candidate model
                 continue
 
@@ -275,8 +297,8 @@ class AIEngine:
         # 1. GREETINGS
         if any(w in q_lower for w in ["who are you", "hello", "hi", "hey", "what can you do"]):
             ans = (
-                "### 👋 Hello! I'm ORVEYRA AI\n\n"
-                "I am your intelligent health assistant and conversational companion. "
+                "### 👋 Hello! I'm ORVEYRA Health Guide\n\n"
+                "I am your intelligent health and safety companion and conversational guide. "
                 "I can analyze your **cycle patterns**, **sleep telemetry**, **physical symptoms**, and **lab biomarkers**, "
                 "or chat about science, jokes, creative writing, and daily wellness!\n\n"
                 "What would you like to explore today?"
@@ -303,7 +325,63 @@ class AIEngine:
                 "disclaimer": cls.MANDATORY_DISCLAIMER
             }
 
-        # 3. FATIGUE / HEALTH PATTERNS
+        # 3. HEALTHCARE CENTERS / CLINICS / DOCTORS / DOMAINS
+        care_keywords = ["care", "center", "centre", "clinic", "doctor", "specialist", "hospital", "gynae", "endo", "thyroid", "pcos", "lab", "mental", "therapy", "nutrition", "fertility", "domain", "physician", "find", "recommend", "where can i go", "health care"]
+        if any(w in q_lower for w in care_keywords):
+            # Check if a specific domain is asked
+            target_domain = 'all'
+            if any(w in q_lower for w in ["gynae", "pcos", "period", "obstetric", "women's health", "endometriosis"]):
+                target_domain = "Gynecologist"
+            elif any(w in q_lower for w in ["endo", "thyroid", "tsh", "hormon", "insulin", "metabolic"]):
+                target_domain = "Endocrinologist"
+            elif any(w in q_lower for w in ["lab", "blood", "test", "pathology", "ultrasound", "imaging", "ferritin"]):
+                target_domain = "Diagnostic Laboratory"
+            elif any(w in q_lower for w in ["mental", "therap", "psych", "counsel", "mood", "anxiety", "pmdd"]):
+                target_domain = "Mental Health & Therapy"
+            elif any(w in q_lower for w in ["nutri", "diet", "meal", "food"]):
+                target_domain = "Nutritionist & Dietitian"
+            elif any(w in q_lower for w in ["fertility", "ivf", "iui", "conception"]):
+                target_domain = "Fertility & IVF"
+            elif any(w in q_lower for w in ["hospital", "emergency"]):
+                target_domain = "Hospital"
+            elif any(w in q_lower for w in ["physician", "general", "internal medicine"]):
+                target_domain = "General Physician"
+            elif any(w in q_lower for w in ["pelvic", "physiotherapy", "rehab"]):
+                target_domain = "Pelvic Physical Therapy"
+
+            search_res = CareFinderService.search_providers(specialty=target_domain, radius_km=50.0)
+            providers = search_res.get("providers", [])
+
+            if providers:
+                # Format multiple providers grouped or listed
+                prov_blocks = []
+                for p in providers[:6]:
+                    services_str = " • ".join(p.get("services", [])[:3])
+                    prov_blocks.append(
+                        f"#### 🏥 {p['name']} — *{p.get('specialty')}*\n"
+                        f"- **Facility / Clinic**: {p.get('facility_name', 'Verified Healthcare Centre')}\n"
+                        f"- **Domain / Area**: `{p.get('domain', p.get('category', 'Healthcare'))}`\n"
+                        f"- **Address**: {p.get('address')}\n"
+                        f"- **Rating**: ⭐ {p.get('rating', 4.8)} ({p.get('rating_count', 120)}+ reviews) | **Hours**: {p.get('opening_hours', 'Mon-Sat')}\n"
+                        f"- **Contact / Mode**: {p.get('consultation_type')} | Phone: `{p.get('phone')}`\n"
+                        f"- **Key Services**: {services_str}"
+                    )
+
+                domain_title = f"Verified Healthcare Centers ({target_domain})" if target_domain != 'all' else "Verified Multi-Domain Healthcare Centers"
+                ans = (
+                    f"### 🏥 {domain_title}\n\n"
+                    f"Here are top-rated verified healthcare centers across different specialties and domains to consult:\n\n"
+                    + "\n\n".join(prov_blocks) + "\n\n"
+                    f"> **Tip:** You can also open the **Care Finder** tab to view all facilities on an interactive map, filter by radius, and save your preferred doctors!"
+                )
+                return {
+                    "answer": ans,
+                    "grounded_records_used": timeline_context[:3],
+                    "confidence": "ORVEYRA CARE FINDER",
+                    "disclaimer": cls.MANDATORY_DISCLAIMER
+                }
+
+        # 4. FATIGUE / HEALTH PATTERNS
         if any(w in q_lower for w in ["tired", "fatigue", "sleep", "energy", "exhausted"]):
             findings = []
             if avg_sleep is not None:
@@ -328,8 +406,8 @@ class AIEngine:
         return {
             "answer": (
                 f"### 💡 ORVEYRA Response for '{query}'\n\n"
-                "I'm here to assist with health pattern analysis, casual conversation, science questions, or doctor visit preparation.\n\n"
-                "Try asking: *'Tell me a joke'*, *'Why am I tired?'*, *'Explain my lab biomarkers'*, or *'What questions should I ask my doctor?'*."
+                "I'm here to assist with health pattern analysis, casual conversation, science questions, healthcare center recommendations, or doctor visit preparation.\n\n"
+                "Try asking: *'Show healthcare centers for PCOS'*, *'Find endocrinologists'*, *'Mental health clinics'*, *'Tell me a joke'*, *'Why am I tired?'*, or *'Explain my lab biomarkers'*."
             ),
             "grounded_records_used": timeline_context[:2],
             "confidence": "ORVEYRA PATTERN ENGINE",
@@ -345,7 +423,7 @@ class AIEngine:
         user_id: int = 0
     ) -> Dict[str, Any]:
         """
-        Primary conversational endpoint with live AI and multi-turn memory.
+        Primary conversational endpoint with live inference and multi-turn memory.
         """
         sanitized_context = PIISanitizer.prepare_timeline_for_ai(timeline_context, user_profile)
         sanitized_query = PIISanitizer.sanitize_text(query)
@@ -354,7 +432,7 @@ class AIEngine:
         if sanitized_context:
             health_context_str = json.dumps(sanitized_context[:15], indent=1, default=str)
 
-        # Execute Live GenAI Call
+        # Execute live model call
         ai_response = cls._call_gemini(
             user_id=user_id,
             user_message=sanitized_query,

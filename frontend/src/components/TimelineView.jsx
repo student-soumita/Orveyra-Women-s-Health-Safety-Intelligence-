@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react'
-import { Clock, Search, Filter, Trash2, Calendar, Activity, FileText, Pill, Moon, Rewind, AlertCircle } from 'lucide-react'
+import { Clock, Search, Filter, Trash2, Calendar, Activity, FileText, Pill, Moon, Rewind, AlertCircle, ShieldAlert } from 'lucide-react'
 
-export default function TimelineView({ cycles, symptoms, lifestyle, biomarkers, medications, onDeleteLog, onRefresh }) {
+export default function TimelineView({ cycles, symptoms, lifestyle, biomarkers, medications, incidents = [], onDeleteLog, onRefresh }) {
   const [filterCategory, setFilterCategory] = useState('ALL')
   const [searchQuery, setSearchQuery] = useState('')
   const [rewindMonths, setRewindMonths] = useState(12) // 3, 6, 12, or 999 (all)
@@ -80,8 +80,22 @@ export default function TimelineView({ cycles, symptoms, lifestyle, biomarkers, 
       })
     })
 
+    incidents.forEach(inc => {
+      list.push({
+        id: `safety_${inc.id}`,
+        rawId: inc.id,
+        stream: 'safety',
+        date: inc.incident_at ? inc.incident_at.split('T')[0] : inc.created_at?.split('T')[0] || new Date().toISOString().split('T')[0],
+        title: `Safety Incident${inc.category ? `: ${inc.category}` : ''}`,
+        description: inc.description || 'Incident recorded via Immediate Help',
+        badge: 'SAFETY',
+        badgeColor: 'bg-amber-500/20 text-amber-300 border-amber-500/40',
+        icon: ShieldAlert
+      })
+    })
+
     return list.sort((a, b) => new Date(b.date) - new Date(a.date))
-  }, [cycles, symptoms, lifestyle, biomarkers, medications])
+  }, [cycles, symptoms, lifestyle, biomarkers, medications, incidents])
 
   // Filter based on category, search, and Health Rewind time range
   const filteredItems = useMemo(() => {
@@ -164,7 +178,7 @@ export default function TimelineView({ cycles, symptoms, lifestyle, biomarkers, 
 
         {/* Category Pills */}
         <div className="flex items-center gap-1.5 overflow-x-auto w-full sm:w-auto scrollbar-none">
-          {['ALL', 'CYCLE', 'SYMPTOM', 'LIFESTYLE', 'BIOMARKER', 'MEDICATION'].map(cat => (
+          {['ALL', 'CYCLE', 'SYMPTOM', 'LIFESTYLE', 'BIOMARKER', 'MEDICATION', 'SAFETY'].map(cat => (
             <button
               key={cat}
               onClick={() => setFilterCategory(cat)}

@@ -1,16 +1,22 @@
 import React from 'react'
-import { Activity, Clock, Network, FileText, MessageSquare, Stethoscope, Shield, PlusCircle, LogIn, UserCheck, LogOut, KeyRound } from 'lucide-react'
+import { Activity, Clock, Network, FileText, MessageSquare, Stethoscope, Shield, Headphones, PlusCircle, LogIn, User, LogOut, KeyRound, UserCheck, Compass, ShieldAlert } from 'lucide-react'
 
-export default function Navbar({ activeTab, setActiveTab, user, onOpenAuth, onLogout, onOpenQuickLog }) {
+export default function Navbar({ activeTab, setActiveTab, user, profile, onOpenAuth, onLogout, onOpenQuickLog, onOpenProfile }) {
   const navItems = [
     { id: 'dashboard', label: 'Dashboard', icon: Activity },
     { id: 'timeline', label: 'Timeline & Rewind', icon: Clock },
     { id: 'signal-graph', label: 'Signal Graph', icon: Network },
     { id: 'lab-vault', label: 'Lab Vault', icon: FileText },
+    { id: 'mood-space', label: 'Mood Space', icon: Headphones },
     { id: 'ask-timeline', label: 'Ask Timeline', icon: MessageSquare },
     { id: 'doctor-mode', label: 'Doctor Mode', icon: Stethoscope },
+    { id: 'care-finder', label: 'Care Finder', icon: Compass },
+    { id: 'immediate-help', label: '🚨 Immediate Help', icon: ShieldAlert },
     { id: 'privacy-center', label: 'Privacy Center', icon: Shield },
   ]
+
+  const displayName = profile?.full_name || user?.email?.split('@')[0] || 'User'
+  const avatarUrl = profile?.avatar_url
 
   return (
     <header className="sticky top-0 z-40 w-full glass-card border-b border-amethyst-800/40 bg-amethyst-950/80 backdrop-blur-md">
@@ -26,11 +32,11 @@ export default function Navbar({ activeTab, setActiveTab, user, onOpenAuth, onLo
               <div className="flex items-center gap-2">
                 <span className="font-bold text-xl tracking-tight gradient-text">ORVEYRA</span>
                 <span className="text-[10px] uppercase font-semibold tracking-widest px-2 py-0.5 rounded-full bg-amethyst-800/60 text-rosegold-400 border border-amethyst-700/50">
-                  HEALTH AI
+                  WOMEN’S HEALTH & SAFETY INTELLIGENCE
                 </span>
               </div>
               <p className="text-[11px] text-slate-400 hidden sm:block">
-                “Your body leaves clues. ORVEYRA connects them.”
+                “Understand your health. Own your safety”
               </p>
             </div>
           </div>
@@ -58,26 +64,42 @@ export default function Navbar({ activeTab, setActiveTab, user, onOpenAuth, onLo
           </nav>
 
           {/* Action Buttons & Auth */}
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 sm:gap-3">
             {user ? (
               <>
                 <button
                   onClick={onOpenQuickLog}
-                  className="flex items-center gap-2 px-3.5 py-1.5 rounded-lg bg-gradient-to-r from-amethyst-600 to-rosegold-600 hover:from-amethyst-500 hover:to-rosegold-500 text-white text-sm font-semibold shadow-md transition-all glow-rose"
+                  className="flex items-center gap-1.5 px-3 sm:px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-amethyst-600 to-rosegold-600 hover:from-amethyst-500 hover:to-rosegold-500 text-white text-xs sm:text-sm font-semibold shadow-md transition-all glow-rose cursor-pointer"
                 >
                   <PlusCircle className="w-4 h-4" />
-                  <span>Quick Log</span>
+                  <span className="hidden sm:inline">Quick Log</span>
+                  <span className="sm:hidden">Log</span>
                 </button>
                 
-                <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-lg bg-amethyst-900/60 border border-amethyst-800/50 text-xs text-slate-300">
-                  <UserCheck className="w-3.5 h-3.5 text-emerald-400" />
-                  <span className="max-w-[100px] truncate">{user.email}</span>
-                </div>
+                {/* User Profile Avatar & Button */}
+                <button
+                  onClick={onOpenProfile}
+                  className="flex items-center gap-2 pl-1.5 pr-3 py-1 rounded-xl bg-amethyst-900/70 hover:bg-amethyst-800 border border-amethyst-700/60 text-xs text-slate-200 transition-all cursor-pointer shadow-sm hover:border-rosegold-400/50"
+                  title="Open My Profile & Photo"
+                >
+                  <div className="w-7 h-7 rounded-full overflow-hidden border border-rosegold-400/80 bg-amethyst-950 flex items-center justify-center shrink-0">
+                    {avatarUrl ? (
+                      <img src={avatarUrl} alt="Avatar" className="w-full h-full object-cover" />
+                    ) : (
+                      <span className="text-[11px] font-bold text-rosegold-300">
+                        {displayName.charAt(0).toUpperCase()}
+                      </span>
+                    )}
+                  </div>
+                  <span className="max-w-[90px] sm:max-w-[120px] truncate font-semibold text-slate-200">
+                    {displayName}
+                  </span>
+                </button>
 
                 <button
                   onClick={onLogout}
                   title="Logout"
-                  className="p-2 rounded-lg text-slate-400 hover:text-rose-400 hover:bg-amethyst-900/50 transition-colors"
+                  className="p-2 rounded-xl text-slate-400 hover:text-rose-400 hover:bg-amethyst-900/50 transition-colors"
                 >
                   <LogOut className="w-4 h-4" />
                 </button>
@@ -98,10 +120,10 @@ export default function Navbar({ activeTab, setActiveTab, user, onOpenAuth, onLo
 
                 <button
                   onClick={onOpenAuth}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amethyst-800 hover:bg-amethyst-700 text-slate-200 text-xs font-semibold border border-amethyst-600/40 transition-all"
+                  className="flex items-center gap-2 px-3.5 py-1.5 rounded-lg bg-gradient-to-r from-amethyst-600 to-rosegold-600 hover:from-amethyst-500 hover:to-rosegold-500 text-white text-xs font-bold shadow-md transition-all glow-rose"
                 >
-                  <LogIn className="w-3.5 h-3.5 text-slate-400" />
-                  <span>Modal Login</span>
+                  <LogIn className="w-4 h-4" />
+                  <span>Sign In</span>
                 </button>
               </div>
             )}
@@ -109,29 +131,6 @@ export default function Navbar({ activeTab, setActiveTab, user, onOpenAuth, onLo
 
         </div>
       </div>
-
-      {/* Mobile Nav Drawer Bar */}
-      <div className="lg:hidden flex items-center overflow-x-auto gap-2 px-4 py-2 border-t border-amethyst-800/40 bg-amethyst-950/90 scrollbar-none">
-        {navItems.map((item) => {
-          const Icon = item.icon
-          const isActive = activeTab === item.id
-          return (
-            <button
-              key={item.id}
-              onClick={() => setActiveTab(item.id)}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap ${
-                isActive
-                  ? 'bg-amethyst-800 text-white border border-amethyst-600'
-                  : 'text-slate-400 hover:text-white'
-              }`}
-            >
-              <Icon className="w-3.5 h-3.5" />
-              <span>{item.label}</span>
-            </button>
-          )
-        })}
-      </div>
     </header>
   )
 }
-

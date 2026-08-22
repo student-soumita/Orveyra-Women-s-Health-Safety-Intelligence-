@@ -1,5 +1,6 @@
 import os
 import datetime
+from typing import Optional
 import jwt
 from passlib.context import CryptContext
 from fastapi import HTTPException, Security, Depends, status, Response, Request
@@ -68,6 +69,31 @@ def get_current_user(
         raise HTTPException(status_code=401, detail="User account no longer exists")
 
     return user
+
+def get_optional_current_user(
+    request: Request,
+    token_cookie: str = Depends(cookie_scheme),
+    db: Session = Depends(get_db)
+) -> Optional[User]:
+    token = None
+    auth_header = request.headers.get("Authorization")
+    if auth_header and auth_header.startswith("Bearer "):
+        token = auth_header.split(" ")[1]
+    
+    if not token:
+        token = token_cookie
+
+    if not token:
+        return None
+
+    try:
+        payload = decode_access_token(token)
+        user_id = payload.get("sub")
+        if user_id is None:
+            return None
+        return db.query(User).filter(User.id == int(user_id)).first()
+    except Exception:
+        return None
 
 def log_audit(db: Session, user_id: int, action: str, endpoint: str = None, client_ip: str = None):
     audit = AuditLog(

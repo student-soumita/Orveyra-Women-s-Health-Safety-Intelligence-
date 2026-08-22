@@ -21,6 +21,9 @@ class User(Base):
     medications = relationship("MedicationLog", back_populates="user", cascade="all, delete-orphan")
     documents = relationship("DocumentVault", back_populates="user", cascade="all, delete-orphan")
     observations = relationship("AIObservation", back_populates="user", cascade="all, delete-orphan")
+    # Immediate Help relationships (additive — do not change existing behaviour)
+    trusted_contacts = relationship("TrustedContact", back_populates="user", cascade="all, delete-orphan")
+    incident_records = relationship("IncidentRecord", back_populates="user", cascade="all, delete-orphan")
 
 class UserProfile(Base):
     __tablename__ = "user_profiles"
@@ -29,6 +32,13 @@ class UserProfile(Base):
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), unique=True, index=True, nullable=False)
     full_name = Column(String, nullable=True)
     dob = Column(String, nullable=True)
+    avatar_url = Column(Text, nullable=True)
+    age = Column(Integer, nullable=True)
+    blood_group = Column(String, nullable=True)
+    height_cm = Column(Float, nullable=True)
+    weight_kg = Column(Float, nullable=True)
+    medical_conditions = Column(String, nullable=True)
+    emergency_contact = Column(String, nullable=True)
     typical_cycle_length = Column(Integer, default=28)
     typical_period_length = Column(Integer, default=5)
     baseline_notes = Column(Text, nullable=True)
@@ -171,3 +181,140 @@ class DoctorShareToken(Base):
     expires_at = Column(DateTime, nullable=False)
     access_count = Column(Integer, default=0)
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
+
+# ---------------------------------------------------------
+# CARE FINDER MODELS (ISOLATED MODULAR TABLES)
+# ---------------------------------------------------------
+
+class CareSavedPlace(Base):
+    __tablename__ = "care_saved_places"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), index=True, nullable=False)
+    provider_id = Column(String, nullable=False)
+    name = Column(String, nullable=False)
+    specialty = Column(String, nullable=False)
+    facility_name = Column(String, nullable=True)
+    address = Column(String, nullable=False)
+    phone = Column(String, nullable=True)
+    rating = Column(Float, nullable=True)
+    latitude = Column(Float, nullable=True)
+    longitude = Column(Float, nullable=True)
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+
+class CareSearchHistory(Base):
+    __tablename__ = "care_search_history"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), index=True, nullable=False)
+    query = Column(String, nullable=True)
+    location_name = Column(String, nullable=True)
+    specialty = Column(String, nullable=True)
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+
+class CareShareLink(Base):
+    __tablename__ = "care_share_links"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), index=True, nullable=False)
+    token = Column(String, unique=True, index=True, nullable=False)
+    provider_id = Column(String, nullable=False)
+    provider_name = Column(String, nullable=False)
+    shared_sections_json = Column(Text, nullable=False) # JSON array of shared keys
+    expires_at = Column(DateTime, nullable=False)
+    is_revoked = Column(Boolean, default=False)
+    access_count = Column(Integer, default=0)
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+
+
+# ---------------------------------------------------------
+# IMMEDIATE HELP MODELS (ISOLATED — DO NOT MODIFY ABOVE)
+# ---------------------------------------------------------
+
+class TrustedContact(Base):
+    """Private trusted contacts for Immediate Help only. Never public."""
+    __tablename__ = "trusted_contacts"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), index=True, nullable=False)
+    name = Column(String, nullable=False)
+    phone = Column(String, nullable=True)
+    relationship_label = Column(String, nullable=True)  # Mom, Friend, Partner, etc.
+    custom_label = Column(String, nullable=True)
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+
+    user = relationship("User", back_populates="trusted_contacts")
+
+Index("idx_trusted_contact_user", TrustedContact.user_id)
+
+
+class IncidentRecord(Base):
+    """
+    A safety incident recorded by the user via Immediate Help.
+    Strictly private to the authenticated user.
+    """
+    __tablename__ = "incident_records"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), index=True, nullable=False)
+    # User-entered fields
+    description = Column(Text, nullable=True)
+    category = Column(String, nullable=True)           # Harassment, Threat, Stalking, Unsafe interaction, Medical concern, Other
+    location_text = Column(String, nullable=True)       # Free-text or reverse-geocoded string
+    latitude = Column(Float, nullable=True)
+    longitude = Column(Float, nullable=True)
+    incident_at = Column(DateTime, nullable=False, default=datetime.datetime.utcnow)
+    status = Column(String, default="open")            # open, resolved, archived
+    # Optional doctor-mode inclusion (default OFF per spec)
+    include_in_doctor_report = Column(Boolean, default=False)
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow)
+
+    user = relationship("User", back_populates="incident_records")
+    evidence = relationship("IncidentEvidence", back_populates="incident", cascade="all, delete-orphan")
+    events = relationship("IncidentEvent", back_populates="incident", cascade="all, delete-orphan", order_by="IncidentEvent.event_at")
+
+Index("idx_incident_user_time", IncidentRecord.user_id, IncidentRecord.incident_at)
+
+
+class IncidentEvidence(Base):
+    """
+    Evidence file attached to an incident.
+    Stored in private safety_vault directory, served only via authenticated endpoint.
+    SHA-256 hash stored for integrity metadata (not legal certification).
+    """
+    __tablename__ = "incident_evidence"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), index=True, nullable=False)
+    incident_id = Column(Integer, ForeignKey("incident_records.id", ondelete="CASCADE"), index=True, nullable=False)
+    filename = Column(String, nullable=False)          # Original filename
+    stored_filename = Column(String, nullable=False)   # Stored filename (UUID-based)
+    file_path = Column(String, nullable=False)         # Absolute path in safety_vault
+    mime_type = Column(String, nullable=True)
+    file_size_bytes = Column(Integer, nullable=True)
+    sha256_hash = Column(String, nullable=True)        # Integrity metadata only
+    uploaded_at = Column(DateTime, default=datetime.datetime.utcnow)
+
+    incident = relationship("IncidentRecord", back_populates="evidence")
+
+Index("idx_evidence_incident", IncidentEvidence.incident_id)
+
+
+class IncidentEvent(Base):
+    """
+    Panic Timeline events — a chronological log of what the user did during an incident.
+    Automatically created by the backend when user takes actions.
+    """
+    __tablename__ = "incident_events"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), index=True, nullable=False)
+    incident_id = Column(Integer, ForeignKey("incident_records.id", ondelete="CASCADE"), index=True, nullable=False)
+    event_type = Column(String, nullable=False)        # OPENED, LOCATION_SHARED, NOTE_ADDED, EVIDENCE_ADDED, CALL_SELECTED, EXITED
+    label = Column(String, nullable=True)              # Human-readable description
+    event_at = Column(DateTime, default=datetime.datetime.utcnow)
+
+    incident = relationship("IncidentRecord", back_populates="events")
+
+Index("idx_event_incident_time", IncidentEvent.incident_id, IncidentEvent.event_at)

@@ -5,7 +5,7 @@ import {
   XCircle, RotateCcw, X
 } from 'lucide-react'
 
-export default function LoginPage({ onLoginSuccess, onCancelModal }) {
+export default function LoginPage({ onLoginSuccess, onCancelModal, onShowIntro }) {
   const [mode, setMode] = useState('login') // 'login', 'signup', 'forgot'
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -314,10 +314,10 @@ export default function LoginPage({ onLoginSuccess, onCancelModal }) {
       waveform: [70, 70, 70, 95, 95, 30, 80, 80, 50, 90, 90]
     },
     {
-      title: 'Body Drift AI Engine',
+      title: 'Body Drift™ Signal Engine',
       subtitle: 'Detect subtle physiological variations before macro-symptoms emerge.',
       icon: Cpu,
-      badge: 'Biometric AI',
+      badge: 'Biometric Signals',
       color: 'from-rosegold-500 to-amber-500',
       waveform: [20, 40, 60, 30, 75, 55, 90, 45, 80, 60, 95]
     }
@@ -678,13 +678,13 @@ export default function LoginPage({ onLoginSuccess, onCancelModal }) {
           </div>
 
           {/* Bottom Footer Mode Toggle Prompt */}
-          <div className="mt-6 text-center text-xs text-slate-400 space-y-2">
+          <div className="mt-6 text-center text-xs text-slate-400 space-y-3">
             {mode === 'login' ? (
               <p>
                 Don't have a secure vault yet?{' '}
                 <button
                   onClick={() => { setMode('signup'); setError(null); }}
-                  className="text-rosegold-400 font-bold hover:underline"
+                  className="text-rosegold-400 font-bold hover:underline cursor-pointer"
                 >
                   Register Now
                 </button>
@@ -694,11 +694,23 @@ export default function LoginPage({ onLoginSuccess, onCancelModal }) {
                 Already have an account?{' '}
                 <button
                   onClick={() => { setMode('login'); setError(null); }}
-                  className="text-rosegold-400 font-bold hover:underline"
+                  className="text-rosegold-400 font-bold hover:underline cursor-pointer"
                 >
                   Sign In
                 </button>
               </p>
+            )}
+
+            {onShowIntro && (
+              <div className="pt-2 border-t border-amethyst-800/40">
+                <button
+                  onClick={onShowIntro}
+                  className="inline-flex items-center gap-1.5 text-xs text-slate-400 hover:text-rosegold-300 transition-colors font-medium cursor-pointer"
+                >
+                  <Sparkles className="w-3.5 h-3.5 text-rosegold-400" />
+                  <span>Watch Cinematic Intro</span>
+                </button>
+              </div>
             )}
           </div>
 

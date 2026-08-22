@@ -1,5 +1,6 @@
 import React, { useState } from 'react'
-import { Activity, AlertCircle, Sparkles, PlusCircle, FileText, Calendar, Moon, ArrowUpRight, HelpCircle, ShieldCheck, ChevronRight, Database, RefreshCw, Info, CheckCircle2 } from 'lucide-react'
+import { Activity, AlertCircle, Sparkles, PlusCircle, FileText, Calendar, Moon, ArrowUpRight, HelpCircle, ShieldCheck, ChevronRight, Database, RefreshCw, Info, CheckCircle2, Headphones } from 'lucide-react'
+import WhatChangedCard from './WhatChangedCard'
 
 export default function Dashboard({
   user,
@@ -57,6 +58,8 @@ export default function Dashboard({
         const mean = Number(calculatedCycleAvg)
         const variance = diffs.reduce((acc, val) => acc + Math.pow(val - mean, 2), 0) / diffs.length
         calculatedCycleStdDev = Math.sqrt(variance).toFixed(1)
+      } else {
+        calculatedCycleStdDev = "0.0"
       }
     }
   }
@@ -118,6 +121,15 @@ export default function Dashboard({
 
         <div className="flex flex-wrap items-center gap-3">
           <button
+            onClick={() => onNavigateTab('mood-space')}
+            className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-gradient-to-r from-amethyst-800 to-rosegold-950 hover:from-amethyst-700 hover:to-rosegold-900 border border-rosegold-500/50 text-rosegold-300 text-xs font-bold transition-all shadow-md glow-purple cursor-pointer"
+            title="Open Mood Space Instrumental Music Sanctuary"
+          >
+            <Headphones className="w-4 h-4 text-rosegold-400" />
+            <span>🎧 Mood Space</span>
+          </button>
+
+          <button
             onClick={handleSeedSampleData}
             disabled={loadingSeed}
             className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-amethyst-800 hover:bg-amethyst-700 border border-amethyst-600/60 text-rosegold-300 text-xs font-bold transition-all shadow-md"
@@ -167,7 +179,7 @@ export default function Dashboard({
             <p className="text-slate-300 leading-relaxed">
               <strong className="text-rosegold-300">1. Log Telemetry:</strong> Record your cycle dates, symptoms, and sleep duration using <em>Quick Log</em> or upload lab PDFs in <em>Lab Vault</em>.<br/>
               <strong className="text-rosegold-300">2. Personal Baseline:</strong> The system automatically calculates your normal baseline (mean & variation range) instead of blind population averages.<br/>
-              <strong className="text-rosegold-300">3. Body Drift™ & Intelligence:</strong> If your pattern shifts, ORVEYRA flags <em>"Body Drift Detected"</em> with evidence links and an intelligent ChatGPT-style grounded assistant.
+              <strong className="text-rosegold-300">3. Body Drift™ & Intelligence:</strong> If your pattern shifts, ORVEYRA flags <em>"Body Drift Detected"</em> with evidence links and an intelligent grounded health guide.
             </p>
           </div>
         </div>
@@ -208,6 +220,19 @@ export default function Dashboard({
             </button>
           </div>
         </div>
+      )}
+
+      {/* SIGNATURE FEATURE: PERSONAL BASELINE + "WHAT CHANGED?" */}
+      {!isNewAccount && (
+        <WhatChangedCard
+          cycles={cycles}
+          symptoms={symptoms}
+          lifestyle={lifestyle}
+          biomarkers={biomarkers}
+          bodyDriftData={bodyDriftData}
+          onOpenEvidence={onOpenEvidence}
+          onOpenQuickLog={onOpenQuickLog}
+        />
       )}
 
       {/* BODY DRIFT DETECTED BANNER */}
@@ -330,26 +355,63 @@ export default function Dashboard({
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             
-            {/* Cycle Baseline */}
-            <div className="p-4 rounded-xl bg-amethyst-950/70 border border-amethyst-800/60 space-y-1">
+            {/* Cycle Stability Baseline Card */}
+            <div 
+              onClick={() => onOpenQuickLog('cycle')}
+              className="p-4 rounded-xl bg-amethyst-950/70 hover:bg-amethyst-900/60 border border-amethyst-800/60 hover:border-rosegold-500/50 space-y-2 transition-all cursor-pointer group shadow-sm"
+              title="Click to record or update menstrual cycle dates"
+            >
               <div className="flex items-center justify-between text-xs text-slate-400">
-                <span>Cycle Stability</span>
-                <Calendar className="w-4 h-4 text-rosegold-400" />
+                <span className="font-semibold group-hover:text-rosegold-300 transition-colors">Cycle Stability</span>
+                <div className="p-1 rounded-md bg-amethyst-900/80 group-hover:bg-rosegold-500/20 text-rosegold-400">
+                  <Calendar className="w-4 h-4" />
+                </div>
               </div>
-              <div className="text-2xl font-extrabold text-slate-100">
-                {finalCycleAvg != null ? (
-                  <>
-                    {finalCycleAvg} <span className="text-xs text-slate-400 font-normal">days</span>
-                  </>
-                ) : (
-                  <span className="text-slate-500 font-bold">--</span>
+
+              <div className="text-2xl font-extrabold text-slate-100 flex items-baseline justify-between">
+                <div>
+                  {finalCycleAvg != null ? (
+                    <>
+                      {finalCycleAvg} <span className="text-xs text-slate-400 font-normal">days</span>
+                    </>
+                  ) : cycles.length === 1 ? (
+                    <>
+                      {profile?.typical_cycle_length || 28} <span className="text-xs text-slate-400 font-normal">days (est)</span>
+                    </>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={(e) => { e.stopPropagation(); onOpenQuickLog('cycle'); }}
+                      className="text-xs text-rosegold-300 font-bold bg-rosegold-500/10 hover:bg-rosegold-500/20 px-2.5 py-1 rounded border border-rosegold-500/30 transition-colors"
+                    >
+                      + Log Period Start
+                    </button>
+                  )}
+                </div>
+
+                {cycles.length >= 2 && (
+                  <span className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded-full border ${
+                    finalCycleStdDev != null && Number(finalCycleStdDev) <= 2.5
+                      ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                      : finalCycleStdDev != null && Number(finalCycleStdDev) <= 5.0
+                      ? 'bg-amber-500/20 text-amber-300 border-amber-500/40'
+                      : 'bg-rose-500/20 text-rose-300 border-rose-500/40'
+                  }`}>
+                    {finalCycleStdDev != null && Number(finalCycleStdDev) <= 2.5 ? 'Stable' : finalCycleStdDev != null && Number(finalCycleStdDev) <= 5.0 ? 'Mild Variance' : 'Irregular'}
+                  </span>
                 )}
               </div>
-              <p className="text-[11px] text-slate-400">
-                {finalCycleStdDev != null
-                  ? `Std Dev: ±${finalCycleStdDev} days • ${cycles.length} cycles logged`
-                  : `${cycles.length} cycles logged`}
-              </p>
+
+              <div className="flex items-center justify-between text-[11px] text-slate-400 pt-0.5">
+                <span>
+                  {cycles.length >= 2
+                    ? `±${finalCycleStdDev || '0.0'}d variance • ${cycles.length} cycles`
+                    : cycles.length === 1
+                    ? `1 cycle logged (${cycles[0]?.start_date}) • Add 2nd`
+                    : 'Click to add period start dates'}
+                </span>
+                <span className="text-rosegold-400 group-hover:underline font-bold text-[10px]">+ Log</span>
+              </div>
             </div>
 
             {/* Sleep Baseline */}
@@ -489,6 +551,36 @@ export default function Dashboard({
           </div>
         </div>
 
+      </div>
+
+      {/* 🎧 MOOD SPACE BANNER */}
+      <div 
+        onClick={() => onNavigateTab('mood-space')}
+        className="glass-card rounded-2xl p-6 border border-amethyst-700/60 bg-gradient-to-r from-amethyst-950 via-amethyst-900/70 to-amethyst-950 hover:border-rosegold-500/50 transition-all cursor-pointer group shadow-lg flex flex-col sm:flex-row sm:items-center justify-between gap-4"
+      >
+        <div className="flex items-center gap-4">
+          <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-amethyst-600 via-amethyst-700 to-rosegold-500 flex items-center justify-center text-white shadow-md group-hover:scale-105 transition-transform shrink-0">
+            <Headphones className="w-6 h-6 text-white" />
+          </div>
+          <div className="space-y-0.5">
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-bold text-slate-100 group-hover:text-rosegold-300 transition-colors">
+                Mood Space • Somatic Nervous System Sanctuary
+              </span>
+              <span className="text-[10px] uppercase font-extrabold px-2 py-0.5 rounded-full bg-amethyst-800 text-rosegold-300 border border-amethyst-700/60">
+                Ambient Soundscapes
+              </span>
+            </div>
+            <p className="text-xs text-slate-400">
+              Not music. Select your state (Calm • Anxious • Low • Stressed • Focused • Sleep) for 4-7-8 breathing, rain & ocean soundscapes.
+            </p>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-1.5 text-xs font-bold text-rosegold-400 group-hover:translate-x-1 transition-transform shrink-0">
+          <span>Enter Mood Space</span>
+          <ChevronRight className="w-4 h-4" />
+        </div>
       </div>
 
     </div>

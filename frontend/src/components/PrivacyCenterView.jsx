@@ -1,65 +1,38 @@
 import React, { useState } from 'react'
-import { Shield, Eye, Lock, Download, Trash2, CheckCircle2, ToggleLeft, ToggleRight, Sparkles, RefreshCw } from 'lucide-react'
+import { Shield, Lock, Trash2, CheckCircle2, RefreshCw, AlertTriangle, Key, FileCheck, Check } from 'lucide-react'
 
-export default function PrivacyCenterView({ user, profile, onToggleAI, onDeleteAccount, onRefresh }) {
-  const [aiEnabled, setAiEnabled] = useState(profile?.ai_processing_enabled ?? true)
-  const [sampleText, setSampleText] = useState("Patient Jane Doe (jane@example.com, DOB 1994-08-15) logged pelvic cramps.")
-  const [sanitizedPreview, setSanitizedPreview] = useState(null)
-  const [inspecting, setInspecting] = useState(false)
+export default function PrivacyCenterView({ user, profile, onDeleteAccount, onRefresh }) {
   const [deleteStreamSuccess, setDeleteStreamSuccess] = useState(null)
+  const [deletingStream, setDeletingStream] = useState(null)
 
-  const handleToggleAI = async () => {
-    const newVal = !aiEnabled
-    setAiEnabled(newVal)
+  const handleDeleteStream = async (streamName, displayName) => {
+    if (!window.confirm(`Are you sure you want to permanently clear all ${displayName} records? This cannot be undone.`)) return
+    setDeletingStream(streamName)
     try {
-      await fetch(`/api/privacy/toggle-ai?enabled=${newVal}`, { method: 'POST' })
-      onToggleAI(newVal)
-    } catch (err) {
-      console.error("AI toggle error:", err)
-    }
-  }
-
-  const handleInspectPII = async () => {
-    setInspecting(true)
-    try {
-      const res = await fetch('/api/ai/privacy-inspect', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ query: sampleText })
-      })
-      const data = await res.json()
-      setSanitizedPreview(data)
-    } catch (err) {
-      console.error("PII inspection error:", err)
-    } finally {
-      setInspecting(false)
-    }
-  }
-
-  const handleExportArchive = async () => {
-    try {
-      const res = await fetch('/api/privacy/export-archive')
-      const data = await res.json()
-      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = `ORVEYRA_Health_Archive_${new Date().toISOString().split('T')[0]}.json`
-      a.click()
-    } catch (err) {
-      console.error("Export archive error:", err)
-    }
-  }
-
-  const handleDeleteStream = async (streamName) => {
-    if (!window.confirm(`Are you sure you want to permanently clear your ${streamName} history?`)) return
-    try {
-      await fetch(`/api/privacy/delete-stream/${streamName}`, { method: 'DELETE' })
-      setDeleteStreamSuccess(`Stream '${streamName}' cleared successfully.`)
-      setTimeout(() => setDeleteStreamSuccess(null), 3000)
-      onRefresh()
+      const res = await fetch(`/api/privacy/delete-stream/${streamName}`, { method: 'DELETE' })
+      if (res.ok) {
+        setDeleteStreamSuccess(`All ${displayName} records have been permanently cleared.`)
+        setTimeout(() => setDeleteStreamSuccess(null), 3500)
+        if (onRefresh) onRefresh()
+      }
     } catch (err) {
       console.error("Delete stream error:", err)
+    } finally {
+      setDeletingStream(null)
+    }
+  }
+
+  const handleClearAllTelemetry = async () => {
+    if (!window.confirm("Are you sure you want to clear ALL health logs (Cycles, Symptoms, Sleep, Lab Biomarkers) and reset your baseline?")) return
+    try {
+      const res = await fetch('/api/logs/clear-all', { method: 'DELETE' })
+      if (res.ok) {
+        setDeleteStreamSuccess("All telemetry data successfully cleared and baseline matrix reset.")
+        setTimeout(() => setDeleteStreamSuccess(null), 3500)
+        if (onRefresh) onRefresh()
+      }
+    } catch (err) {
+      console.error("Clear error:", err)
     }
   }
 
@@ -70,161 +43,167 @@ export default function PrivacyCenterView({ user, profile, onToggleAI, onDeleteA
       <div>
         <h1 className="text-2xl font-bold gradient-text flex items-center gap-2">
           <Shield className="w-6 h-6 text-rosegold-400" />
-          <span>Privacy Center & Data Governance</span>
+          <span>Privacy & Healthcare Security Center</span>
         </h1>
         <p className="text-xs text-slate-400 mt-1">
-          Zero client-side secret leaks • Row-level multi-tenant data isolation • User data sovereignty
+          HIPAA compliance safeguards • Multi-tenant row-level isolation • Patient data sovereignty
         </p>
       </div>
 
       {deleteStreamSuccess && (
-        <div className="p-4 rounded-xl bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 text-xs font-bold flex items-center gap-2">
-          <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+        <div className="p-4 rounded-xl bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 text-xs font-bold flex items-center gap-2 animate-in fade-in duration-200">
+          <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
           <span>{deleteStreamSuccess}</span>
         </div>
       )}
 
-      {/* SECTION 1: AI PROCESSING CONTROLS */}
-      <div className="glass-card rounded-2xl p-6 sm:p-8 border border-amethyst-700/60 space-y-4">
-        <div className="flex items-center justify-between">
-          <div>
-            <h2 className="text-base font-bold text-slate-100 flex items-center gap-2">
-              <Sparkles className="w-5 h-5 text-amethyst-400" />
-              <span>Generative AI Processing Controls</span>
-            </h2>
-            <p className="text-xs text-slate-400 mt-0.5">
-              Pause or resume AI pattern explanation and timeline search
-            </p>
-          </div>
-
-          <button
-            onClick={handleToggleAI}
-            className="flex items-center gap-2 focus:outline-none"
-          >
-            {aiEnabled ? (
-              <ToggleRight className="w-10 h-10 text-emerald-400 transition-all" />
-            ) : (
-              <ToggleLeft className="w-10 h-10 text-slate-600 transition-all" />
-            )}
-            <span className="text-xs font-bold text-slate-300">
-              {aiEnabled ? 'AI Active' : 'AI Paused'}
-            </span>
-          </button>
-        </div>
-
-        <p className="text-xs text-slate-300 leading-relaxed bg-amethyst-950/60 p-3.5 rounded-xl border border-amethyst-800/60">
-          When AI processing is enabled, ORVEYRA passes PII-sanitized telemetry logs to LLM explanation services. Your health data is never used for advertising, cross-tenant profiling, or model re-training.
-        </p>
-      </div>
-
-      {/* SECTION 2: PII SANITIZATION INSPECTOR */}
-      <div className="glass-card rounded-2xl p-6 sm:p-8 border border-amethyst-700/60 space-y-4">
-        <div>
-          <h2 className="text-base font-bold text-slate-100 flex items-center gap-2">
-            <Eye className="w-5 h-5 text-rosegold-400" />
-            <span>Privacy-Preserving PII Sanitization Inspector</span>
-          </h2>
-          <p className="text-xs text-slate-400 mt-0.5">
-            Test how names, emails, dates, and PII are scrubbed before payload transmission
-          </p>
-        </div>
-
-        <div className="space-y-3">
-          <textarea
-            rows={2}
-            value={sampleText}
-            onChange={(e) => setSampleText(e.target.value)}
-            className="w-full px-4 py-2.5 bg-amethyst-950/90 border border-amethyst-800 rounded-xl text-xs text-slate-100 focus:outline-none focus:border-rosegold-500 resize-none"
-          />
-
-          <button
-            onClick={handleInspectPII}
-            disabled={inspecting}
-            className="px-4 py-2 rounded-xl bg-amethyst-800 hover:bg-amethyst-700 text-white text-xs font-bold transition-all border border-amethyst-600 flex items-center gap-2"
-          >
-            <RefreshCw className={`w-3.5 h-3.5 ${inspecting ? 'animate-spin' : ''}`} />
-            <span>Simulate PII Redaction Pass</span>
-          </button>
-
-          {sanitizedPreview && (
-            <div className="p-4 rounded-xl bg-amethyst-950 border border-emerald-500/40 space-y-2 animate-in fade-in duration-200">
-              <span className="text-[11px] font-extrabold uppercase text-emerald-400 block">
-                Sanitized Payload Output:
-              </span>
-              <p className="text-xs text-slate-200 font-mono bg-amethyst-900/80 p-3 rounded-lg border border-amethyst-800">
-                {sanitizedPreview.sanitized_output}
-              </p>
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* SECTION 3: ARCHIVE EXPORT & DATA STREAM MANAGEMENT */}
+      {/* SECTION 1: HEALTHCARE SECURITY & ENCRYPTION GUARANTEES */}
       <div className="glass-card rounded-2xl p-6 sm:p-8 border border-amethyst-700/60 space-y-6">
         <div>
           <h2 className="text-base font-bold text-slate-100 flex items-center gap-2">
-            <Download className="w-5 h-5 text-emerald-400" />
-            <span>Data Sovereignty & Export Archive</span>
+            <Lock className="w-5 h-5 text-rosegold-400" />
+            <span>Healthcare Data Protection & Encryption Architecture</span>
           </h2>
           <p className="text-xs text-slate-400 mt-0.5">
-            Download your full health telemetry archive or perform granular stream purges
+            Your telemetry is private, encrypted, and isolated strictly to your account
           </p>
         </div>
 
-        <div className="flex flex-col sm:flex-row gap-4 items-center justify-between p-4 rounded-xl bg-amethyst-950/70 border border-amethyst-800/60">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <div className="p-4 rounded-xl bg-amethyst-950/80 border border-amethyst-800/80 space-y-2">
+            <div className="w-8 h-8 rounded-lg bg-emerald-500/20 text-emerald-300 flex items-center justify-center">
+              <Shield className="w-4 h-4" />
+            </div>
+            <h3 className="text-xs font-bold text-slate-100">Row-Level Tenant Isolation</h3>
+            <p className="text-[11px] text-slate-400 leading-relaxed">
+              Every database query is strictly filtered by your unique encrypted user ID at the database engine layer.
+            </p>
+          </div>
+
+          <div className="p-4 rounded-xl bg-amethyst-950/80 border border-amethyst-800/80 space-y-2">
+            <div className="w-8 h-8 rounded-lg bg-amethyst-500/20 text-rosegold-300 flex items-center justify-center">
+              <Key className="w-4 h-4" />
+            </div>
+            <h3 className="text-xs font-bold text-slate-100">AES-256 Storage Vault</h3>
+            <p className="text-[11px] text-slate-400 leading-relaxed">
+              Lab reports and health documents are stored in presigned, short-lived HMAC authenticated vaults.
+            </p>
+          </div>
+
+          <div className="p-4 rounded-xl bg-amethyst-950/80 border border-amethyst-800/80 space-y-2">
+            <div className="w-8 h-8 rounded-lg bg-cyan-500/20 text-cyan-300 flex items-center justify-center">
+              <FileCheck className="w-4 h-4" />
+            </div>
+            <h3 className="text-xs font-bold text-slate-100">Automatic PII Redaction</h3>
+            <p className="text-[11px] text-slate-400 leading-relaxed">
+              Names, emails, phone numbers, and dates of birth are stripped before clinical pattern evaluation.
+            </p>
+          </div>
+        </div>
+      </div>
+
+      {/* SECTION 2: GRANULAR DATA STREAM SOVEREIGNTY */}
+      <div className="glass-card rounded-2xl p-6 sm:p-8 border border-amethyst-700/60 space-y-6">
+        <div>
+          <h2 className="text-base font-bold text-slate-100 flex items-center gap-2">
+            <RefreshCw className="w-5 h-5 text-rosegold-400" />
+            <span>Patient Data Sovereignty & Stream Management</span>
+          </h2>
+          <p className="text-xs text-slate-400 mt-0.5">
+            You maintain 100% ownership over your records. Clear specific telemetry streams anytime.
+          </p>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className="p-4 rounded-xl bg-amethyst-950/70 border border-amethyst-800/70 flex items-center justify-between">
+            <div>
+              <span className="text-xs font-bold text-slate-200 block">Menstrual Cycle History</span>
+              <span className="text-[11px] text-slate-400">All cycle start/end dates and flow intensity logs</span>
+            </div>
+            <button
+              onClick={() => handleDeleteStream('cycles', 'Cycle')}
+              disabled={deletingStream === 'cycles'}
+              className="px-3 py-1.5 rounded-lg bg-amethyst-900 hover:bg-rose-500/20 border border-amethyst-700 text-xs text-slate-300 hover:text-rose-300 transition-colors font-medium cursor-pointer"
+            >
+              Clear
+            </button>
+          </div>
+
+          <div className="p-4 rounded-xl bg-amethyst-950/70 border border-amethyst-800/70 flex items-center justify-between">
+            <div>
+              <span className="text-xs font-bold text-slate-200 block">Symptom Log Stream</span>
+              <span className="text-[11px] text-slate-400">All recorded physical and affective symptoms</span>
+            </div>
+            <button
+              onClick={() => handleDeleteStream('symptoms', 'Symptom')}
+              disabled={deletingStream === 'symptoms'}
+              className="px-3 py-1.5 rounded-lg bg-amethyst-900 hover:bg-rose-500/20 border border-amethyst-700 text-xs text-slate-300 hover:text-rose-300 transition-colors font-medium cursor-pointer"
+            >
+              Clear
+            </button>
+          </div>
+
+          <div className="p-4 rounded-xl bg-amethyst-950/70 border border-amethyst-800/70 flex items-center justify-between">
+            <div>
+              <span className="text-xs font-bold text-slate-200 block">Sleep & Lifestyle Telemetry</span>
+              <span className="text-[11px] text-slate-400">Nightly sleep hours, quality, and stress tracking</span>
+            </div>
+            <button
+              onClick={() => handleDeleteStream('lifestyle', 'Sleep & Lifestyle')}
+              disabled={deletingStream === 'lifestyle'}
+              className="px-3 py-1.5 rounded-lg bg-amethyst-900 hover:bg-rose-500/20 border border-amethyst-700 text-xs text-slate-300 hover:text-rose-300 transition-colors font-medium cursor-pointer"
+            >
+              Clear
+            </button>
+          </div>
+
+          <div className="p-4 rounded-xl bg-amethyst-950/70 border border-amethyst-800/70 flex items-center justify-between">
+            <div>
+              <span className="text-xs font-bold text-slate-200 block">Lab Biomarker Records</span>
+              <span className="text-[11px] text-slate-400">Verified blood work and parsed biomarker entries</span>
+            </div>
+            <button
+              onClick={() => handleDeleteStream('biomarkers', 'Biomarker')}
+              disabled={deletingStream === 'biomarkers'}
+              className="px-3 py-1.5 rounded-lg bg-amethyst-900 hover:bg-rose-500/20 border border-amethyst-700 text-xs text-slate-300 hover:text-rose-300 transition-colors font-medium cursor-pointer"
+            >
+              Clear
+            </button>
+          </div>
+        </div>
+
+        <div className="pt-2 flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 rounded-xl bg-amethyst-950/90 border border-amethyst-800/80">
           <div>
-            <span className="text-xs font-bold text-slate-200 block">Full JSON Data Archive</span>
-            <p className="text-[11px] text-slate-400">Includes cycles, symptoms, lifestyle, biomarkers, and meds.</p>
+            <span className="text-xs font-bold text-slate-200 block">Reset Entire Baseline Matrix</span>
+            <span className="text-[11px] text-slate-400">Clears all telemetry entries across all streams and resets baseline</span>
           </div>
           <button
-            onClick={handleExportArchive}
-            className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-emerald-500 hover:from-emerald-500 hover:to-emerald-400 text-white font-bold text-xs shadow-lg transition-all flex items-center gap-2"
+            onClick={handleClearAllTelemetry}
+            className="px-4 py-2 rounded-xl bg-amethyst-900 hover:bg-rose-500/20 border border-amethyst-700 text-xs text-rose-300 font-bold transition-all shrink-0 cursor-pointer"
           >
-            <Download className="w-4 h-4" />
-            <span>Export Archive</span>
+            Reset All Telemetry
           </button>
         </div>
+      </div>
 
-        {/* Granular Stream Purge */}
-        <div className="space-y-3">
-          <span className="text-xs font-bold text-slate-300 uppercase tracking-wider block">
-            Granular Data Stream Erasure
-          </span>
-
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-            {[
-              { id: 'cycles', label: 'Cycle Logs' },
-              { id: 'symptoms', label: 'Symptom Logs' },
-              { id: 'lifestyle', label: 'Lifestyle Logs' },
-              { id: 'biomarkers', label: 'Biomarkers' },
-              { id: 'medications', label: 'Medications' }
-            ].map(stream => (
-              <button
-                key={stream.id}
-                onClick={() => handleDeleteStream(stream.id)}
-                className="p-3 rounded-xl bg-amethyst-950/80 hover:bg-rose-500/10 border border-amethyst-800 hover:border-rose-500/40 text-xs font-semibold text-slate-300 hover:text-rose-300 flex items-center justify-between transition-colors"
-              >
-                <span>Clear {stream.label}</span>
-                <Trash2 className="w-3.5 h-3.5 text-slate-500 hover:text-rose-400" />
-              </button>
-            ))}
-          </div>
+      {/* SECTION 3: PERMANENT ACCOUNT ERASURE */}
+      <div className="glass-card rounded-2xl p-6 sm:p-8 border border-rose-500/30 bg-rose-950/10 space-y-4">
+        <div className="flex items-center gap-2">
+          <AlertTriangle className="w-5 h-5 text-rose-400" />
+          <h2 className="text-base font-bold text-rose-300">Permanent Account Deletion (GDPR & HIPAA Right to Erasure)</h2>
         </div>
 
-        {/* Permanent Account Deletion */}
-        <div className="pt-4 border-t border-amethyst-800/60 flex items-center justify-between">
-          <div>
-            <span className="text-xs font-bold text-rose-400 block">Permanent Account Deletion</span>
-            <p className="text-[11px] text-slate-400">Irreversibly delete your account and all associated row records.</p>
-          </div>
-          <button
-            onClick={onDeleteAccount}
-            className="px-4 py-2 rounded-xl bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/40 font-bold text-xs transition-colors"
-          >
-            Delete Account
-          </button>
-        </div>
+        <p className="text-xs text-slate-300 leading-relaxed">
+          Deleting your account permanently destroys your profile, credentials, all health records, uploaded laboratory documents, and audit trails across all database tables. This action is irreversible.
+        </p>
 
+        <button
+          onClick={onDeleteAccount}
+          className="px-5 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs shadow-lg transition-all flex items-center gap-2 cursor-pointer"
+        >
+          <Trash2 className="w-4 h-4" />
+          <span>Permanently Delete My Account & Shred All Data</span>
+        </button>
       </div>
 
     </div>

@@ -3,26 +3,35 @@ import Navbar from './components/Navbar'
 import FooterDisclaimer from './components/FooterDisclaimer'
 import AuthModal from './components/AuthModal'
 import LoginPage from './components/LoginPage'
+import CinematicIntro from './components/CinematicIntro'
 import OnboardingFlow from './components/OnboardingFlow'
 import QuickLogModal from './components/QuickLogModal'
 import EvidenceDrawer from './components/EvidenceDrawer'
+import UserProfileModal from './components/UserProfileModal'
 import Dashboard from './components/Dashboard'
 import TimelineView from './components/TimelineView'
 import SignalGraphView from './components/SignalGraphView'
 import LabVaultView from './components/LabVaultView'
+import MoodSpaceView from './components/MoodSpaceView'
 import AskTimelineView from './components/AskTimelineView'
 import DoctorModeView from './components/DoctorModeView'
+import CareFinderView from './components/CareFinderView'
+import ImmediateHelpView from './components/ImmediateHelpView'
 import PrivacyCenterView from './components/PrivacyCenterView'
 
 export default function App() {
   const [user, setUser] = useState(null)
   const [profile, setProfile] = useState(null)
   const [activeTab, setActiveTab] = useState('dashboard')
+  const [careFinderSpecialty, setCareFinderSpecialty] = useState('all')
+  const [showIntro, setShowIntro] = useState(true) // Cinematic intro before login
 
   // Modals & Drawers
   const [isAuthOpen, setIsAuthOpen] = useState(false)
   const [isQuickLogOpen, setIsQuickLogOpen] = useState(false)
+  const [quickLogTab, setQuickLogTab] = useState('cycle')
   const [isEvidenceOpen, setIsEvidenceOpen] = useState(false)
+  const [isProfileOpen, setIsProfileOpen] = useState(false)
   const [isOnboarding, setIsOnboarding] = useState(false)
 
   // Telemetry state
@@ -33,6 +42,7 @@ export default function App() {
   const [medications, setMedications] = useState([])
   const [documents, setDocuments] = useState([])
   const [bodyDriftData, setBodyDriftData] = useState(null)
+  const [incidents, setIncidents] = useState([])
 
   useEffect(() => {
     checkCurrentSession()
@@ -63,14 +73,15 @@ export default function App() {
 
   const fetchAllData = async () => {
     try {
-      const [cRes, sRes, lRes, bRes, mRes, dRes, driftRes] = await Promise.all([
+      const [cRes, sRes, lRes, bRes, mRes, dRes, driftRes, incRes] = await Promise.all([
         fetch('/api/logs/cycle'),
         fetch('/api/logs/symptom'),
         fetch('/api/logs/lifestyle'),
         fetch('/api/logs/biomarker'),
         fetch('/api/logs/medication'),
         fetch('/api/vault/documents'),
-        fetch('/api/ai/body-drift')
+        fetch('/api/ai/body-drift'),
+        fetch('/api/immediate-help/incidents')
       ])
 
       if (cRes.ok) setCycles(await cRes.json())
@@ -80,9 +91,15 @@ export default function App() {
       if (mRes.ok) setMedications(await mRes.json())
       if (dRes.ok) setDocuments(await dRes.json())
       if (driftRes.ok) setBodyDriftData(await driftRes.json())
+      if (incRes.ok) setIncidents(await incRes.json())
     } catch (err) {
       console.error("Data refresh error:", err)
     }
+  }
+
+  const handleOpenQuickLog = (tab = 'cycle') => {
+    setQuickLogTab(typeof tab === 'string' ? tab : 'cycle')
+    setIsQuickLogOpen(true)
   }
 
   const handleLoginSuccess = (userData, token) => {
@@ -104,6 +121,7 @@ export default function App() {
     setMedications([])
     setDocuments([])
     setBodyDriftData(null)
+    setIncidents([])
     setActiveTab('login')
   }
 
@@ -122,31 +140,47 @@ export default function App() {
     }
   }
 
-  // Check if we should present the standalone Animated Login Page before main page
+  const handleDeleteDocument = async (docId) => {
+    try {
+      await fetch(`/api/vault/documents/${docId}`, { method: 'DELETE' })
+      fetchAllData()
+    } catch (err) {
+      console.error("Delete document error:", err)
+    }
+  }
+
   const showLoginPage = !user || activeTab === 'login'
 
   return (
     <div className="flex flex-col min-h-screen bg-amethyst-950 text-slate-100 font-sans selection:bg-amethyst-500 selection:text-white">
-      
       {/* Top Navigation Bar - Hidden on Standalone Login Page */}
       {!showLoginPage && (
         <Navbar
           activeTab={activeTab}
           setActiveTab={setActiveTab}
           user={user}
+          profile={profile}
           onOpenAuth={() => setIsAuthOpen(true)}
           onLogout={handleLogout}
-          onOpenQuickLog={() => setIsQuickLogOpen(true)}
+          onOpenQuickLog={() => handleOpenQuickLog('cycle')}
+          onOpenProfile={() => setIsProfileOpen(true)}
         />
       )}
 
       {/* Main Workspace Body */}
       {showLoginPage ? (
-        <div className="flex-1 w-full flex items-center justify-center">
-          <LoginPage
-            onLoginSuccess={handleLoginSuccess}
+        showIntro ? (
+          <CinematicIntro
+            onComplete={() => setShowIntro(false)}
           />
-        </div>
+        ) : (
+          <div className="flex-1 w-full flex items-center justify-center">
+            <LoginPage
+              onLoginSuccess={handleLoginSuccess}
+              onShowIntro={() => setShowIntro(true)}
+            />
+          </div>
+        )
       ) : (
         <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8">
           {isOnboarding ? (
@@ -170,7 +204,7 @@ export default function App() {
                   lifestyle={lifestyle}
                   biomarkers={biomarkers}
                   documents={documents}
-                  onOpenQuickLog={() => setIsQuickLogOpen(true)}
+                  onOpenQuickLog={handleOpenQuickLog}
                   onOpenEvidence={() => setIsEvidenceOpen(true)}
                   onNavigateTab={(tab) => setActiveTab(tab)}
                   onRefreshData={fetchAllData}
@@ -184,6 +218,7 @@ export default function App() {
                   lifestyle={lifestyle}
                   biomarkers={biomarkers}
                   medications={medications}
+                  incidents={incidents}
                   onDeleteLog={handleDeleteLog}
                   onRefresh={fetchAllData}
                 />
@@ -204,7 +239,12 @@ export default function App() {
                   documents={documents}
                   biomarkers={biomarkers}
                   onRefresh={fetchAllData}
+                  onDeleteDocument={handleDeleteDocument}
                 />
+              )}
+
+              {activeTab === 'mood-space' && (
+                <MoodSpaceView />
               )}
 
               {activeTab === 'ask-timeline' && (
@@ -212,14 +252,32 @@ export default function App() {
               )}
 
               {activeTab === 'doctor-mode' && (
-                <DoctorModeView />
+                <DoctorModeView
+                  onNavigateCareFinder={(specialty) => {
+                    setCareFinderSpecialty(specialty || 'all')
+                    setActiveTab('care-finder')
+                  }}
+                  incidents={incidents}
+                />
+              )}
+
+              {activeTab === 'immediate-help' && (
+                <ImmediateHelpView
+                  onNavigateTab={(tab) => setActiveTab(tab)}
+                />
+              )}
+
+              {activeTab === 'care-finder' && (
+                <CareFinderView
+                  defaultSpecialty={careFinderSpecialty}
+                  onNavigateTab={(tab) => setActiveTab(tab)}
+                />
               )}
 
               {activeTab === 'privacy-center' && (
                 <PrivacyCenterView
                   user={user}
                   profile={profile}
-                  onToggleAI={(val) => setProfile(prev => ({ ...prev, ai_processing_enabled: val }))}
                   onDeleteAccount={handleDeleteAccount}
                   onRefresh={fetchAllData}
                 />
@@ -243,6 +301,7 @@ export default function App() {
         isOpen={isQuickLogOpen}
         onClose={() => setIsQuickLogOpen(false)}
         onRefreshData={fetchAllData}
+        initialTab={quickLogTab}
       />
 
       <EvidenceDrawer
@@ -252,7 +311,17 @@ export default function App() {
         signalQuality={bodyDriftData?.ai_explanation?.signal_quality}
       />
 
+      <UserProfileModal
+        isOpen={isProfileOpen}
+        onClose={() => setIsProfileOpen(false)}
+        user={user}
+        profile={profile}
+        onUpdateProfile={(updated) => {
+          setProfile(updated)
+          fetchAllData()
+        }}
+      />
+
     </div>
   )
 }
-
