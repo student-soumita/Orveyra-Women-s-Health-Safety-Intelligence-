@@ -18,6 +18,7 @@ import DoctorModeView from './components/DoctorModeView'
 import CareFinderView from './components/CareFinderView'
 import ImmediateHelpView from './components/ImmediateHelpView'
 import PrivacyCenterView from './components/PrivacyCenterView'
+import SafetyIntelligenceView from './components/SafetyIntelligenceView'
 
 export default function App() {
   const [user, setUser] = useState(null)
@@ -270,6 +271,12 @@ export default function App() {
               {activeTab === 'care-finder' && (
                 <CareFinderView
                   defaultSpecialty={careFinderSpecialty}
+                  onNavigateTab={(tab) => setActiveTab(tab)}
+                />
+              )}
+
+              {activeTab === 'safety-intel' && (
+                <SafetyIntelligenceView
                   onNavigateTab={(tab) => setActiveTab(tab)}
                 />
               )}

@@ -80,16 +80,19 @@ class AIEngine:
 
     _client = None
     _configured_key = None
-    _active_model = "models/gemini-2.5-flash"
-    _model_name = "gemini-2.5-flash"  # Alias for main.py compatibility — do not rename
+    _active_model = "models/gemini-3.6-flash"
+    _model_name = "gemini-3.6-flash"  # Alias for main.py compatibility — do not rename
 
     # Priority order: confirmed working models first, versioned fallbacks after
     CANDIDATE_MODELS = [
-        "models/gemini-flash-lite-latest",   # Fastest, confirmed working
-        "models/gemini-flash-latest",         # Balanced speed/quality, confirmed working
-        "models/gemini-pro-latest",           # Pro tier fallback
-        "models/gemini-3.5-flash",
         "models/gemini-3.6-flash",
+        "models/gemini-2.0-flash",
+        "models/gemini-1.5-flash",
+        "models/gemini-flash-latest",
+        "models/gemini-flash-lite-latest",
+        "models/gemini-2.5-flash",
+        "models/gemini-pro-latest",
+        "models/gemini-3.5-flash",
         "models/gemini-3.7-flash",
         "models/gemini-3.1-flash-lite",
         "models/gemma-4-26b-a4b-it"
@@ -294,29 +297,13 @@ class AIEngine:
             if sleep_vals:
                 avg_sleep = round(sum(sleep_vals) / len(sleep_vals), 1)
 
-        # 1. GREETINGS
-        if any(w in q_lower for w in ["who are you", "hello", "hi", "hey", "what can you do"]):
+        # 1. GREETINGS & WELL-WISHES
+        if any(w in q_lower for w in ["how are you", "how are u", "how's it going", "how is it going", "how's your day", "how do you do", "what's up", "whats up", "sup", "good morning", "good afternoon", "good evening"]):
             ans = (
-                "### 👋 Hello! I'm ORVEYRA Health Guide\n\n"
-                "I am your intelligent health and safety companion and conversational guide. "
-                "I can analyze your **cycle patterns**, **sleep telemetry**, **physical symptoms**, and **lab biomarkers**, "
-                "or chat about science, jokes, creative writing, and daily wellness!\n\n"
-                "What would you like to explore today?"
-            )
-            return {
-                "answer": ans,
-                "grounded_records_used": timeline_context[:3],
-                "confidence": "ORVEYRA PATTERN ENGINE",
-                "disclaimer": cls.MANDATORY_DISCLAIMER
-            }
-
-        # 2. JOKES / CHIT CHAT
-        if "joke" in q_lower or "funny" in q_lower:
-            ans = (
-                "### 😄 Here's one for you!\n\n"
-                "**Why can't you trust atoms?**\n\n"
-                "*Because they make up everything!* ⚛️✨\n\n"
-                "Ask me anything else — science facts, health telemetry, or more jokes!"
+                "### 😊 I'm doing wonderfully, thank you for asking!\n\n"
+                "I'm bright-eyed, sharp, and ready to converse about anything on your mind — "
+                "from casual chatter, jokes, and daily advice, to analyzing your health telemetry or finding top specialist clinics.\n\n"
+                "How are you doing today? What would you like to explore?"
             )
             return {
                 "answer": ans,
@@ -325,7 +312,85 @@ class AIEngine:
                 "disclaimer": cls.MANDATORY_DISCLAIMER
             }
 
-        # 3. HEALTHCARE CENTERS / CLINICS / DOCTORS / DOMAINS
+        # 2. IDENTITY & CAPABILITIES
+        if any(w in q_lower for w in ["who are you", "what is your name", "what's your name", "who made you", "who created you", "what can you do", "what can i ask", "are you ai", "are you human", "tell me about yourself", "who are u", "hello", "hi", "hey", "greetings"]):
+            ans = (
+                "### 👋 Hello! I'm ORVEYRA Health Guide\n\n"
+                "I am your intelligent health and safety companion and conversational guide embedded inside ORVEYRA.\n\n"
+                "**Here is what we can do together:**\n"
+                "- 💬 **Conversational Chitchat**: Casual banter, jokes, riddles, science facts, recipes, creative writing, and daily support.\n"
+                "- 📊 **Health Pattern Analysis**: Deep longitudinal tracking of cycle dates, sleep telemetry, symptoms, and lab biomarkers.\n"
+                "- 🏥 **Healthcare Directory**: Verified provider listings for Gynecologists, Endocrinologists, Diagnostic Labs, Therapists, and Specialists.\n\n"
+                "Feel free to ask me anything!"
+            )
+            return {
+                "answer": ans,
+                "grounded_records_used": timeline_context[:3],
+                "confidence": "ORVEYRA PATTERN ENGINE",
+                "disclaimer": cls.MANDATORY_DISCLAIMER
+            }
+
+        # 3. JOKES & HUMOR
+        if any(w in q_lower for w in ["joke", "funny", "make me laugh", "humor", "riddle", "pun"]):
+            ans = (
+                "### 😄 Here's a fun one for you!\n\n"
+                "**Why can't you trust atoms?**\n\n"
+                "*Because they make up everything!* ⚛️✨\n\n"
+                "Want another joke, a riddle, or to check in on your health patterns today?"
+            )
+            return {
+                "answer": ans,
+                "grounded_records_used": [],
+                "confidence": "ORVEYRA PATTERN ENGINE",
+                "disclaimer": cls.MANDATORY_DISCLAIMER
+            }
+
+        # 4. STORIES & CREATIVITY
+        if any(w in q_lower for w in ["story", "poem", "creative", "tell me a story", "write a", "tale"]):
+            ans = (
+                "### 📖 Once Upon a Time...\n\n"
+                "In a quiet city bathed in starlight, an explorer discovered that true harmony comes from listening closely to the quiet rhythm within.\n\n"
+                "I love creative writing and storytelling! Feel free to prompt me with a topic or theme you'd like a custom story about."
+            )
+            return {
+                "answer": ans,
+                "grounded_records_used": [],
+                "confidence": "ORVEYRA PATTERN ENGINE",
+                "disclaimer": cls.MANDATORY_DISCLAIMER
+            }
+
+        # 5. GRATITUDE & POLITENESS
+        if any(w in q_lower for w in ["thank you", "thanks", "thx", "thank u", "awesome", "great", "cool", "wonderful", "amazing", "good job", "nice", "perfect", "bye", "goodbye", "see ya"]):
+            ans = (
+                "### 💖 You are so very welcome!\n\n"
+                "I'm always here whenever you want to chat, ask questions, or review your wellness insights. Have a fantastic day!"
+            )
+            return {
+                "answer": ans,
+                "grounded_records_used": [],
+                "confidence": "ORVEYRA PATTERN ENGINE",
+                "disclaimer": cls.MANDATORY_DISCLAIMER
+            }
+
+        # 6. WELLNESS & DAILY ADVICE
+        if any(w in q_lower for w in ["relax", "stress", "meditat", "mindful", "bored", "cheer me up", "comfort", "advice", "recipe", "cook", "food", "movie", "book", "weather", "fact", "trivia"]):
+            ans = (
+                f"### 🌿 Daily Wellness & Reflection on '{query}'\n\n"
+                "Taking a moment to pause, breathe, and reflect is one of the best gifts you can give yourself today.\n\n"
+                "**A quick grounding exercise:**\n"
+                "- Take 3 slow, deep breaths (in for 4s, hold for 4s, out for 6s).\n"
+                "- Unclench your jaw and drop your shoulders.\n"
+                "- Sip a warm glass of water or herbal tea.\n\n"
+                "I'm right here if you'd like more tips, a fun story, or want to check your sleep telemetry!"
+            )
+            return {
+                "answer": ans,
+                "grounded_records_used": [],
+                "confidence": "ORVEYRA PATTERN ENGINE",
+                "disclaimer": cls.MANDATORY_DISCLAIMER
+            }
+
+        # 7. HEALTHCARE CENTERS / CLINICS / DOCTORS / DOMAINS
         care_keywords = ["care", "center", "centre", "clinic", "doctor", "specialist", "hospital", "gynae", "endo", "thyroid", "pcos", "lab", "mental", "therapy", "nutrition", "fertility", "domain", "physician", "find", "recommend", "where can i go", "health care"]
         if any(w in q_lower for w in care_keywords):
             # Check if a specific domain is asked
@@ -353,7 +418,6 @@ class AIEngine:
             providers = search_res.get("providers", [])
 
             if providers:
-                # Format multiple providers grouped or listed
                 prov_blocks = []
                 for p in providers[:6]:
                     services_str = " • ".join(p.get("services", [])[:3])
@@ -381,7 +445,7 @@ class AIEngine:
                     "disclaimer": cls.MANDATORY_DISCLAIMER
                 }
 
-        # 4. FATIGUE / HEALTH PATTERNS
+        # 8. FATIGUE / HEALTH PATTERNS
         if any(w in q_lower for w in ["tired", "fatigue", "sleep", "energy", "exhausted"]):
             findings = []
             if avg_sleep is not None:
@@ -402,14 +466,16 @@ class AIEngine:
                 "disclaimer": cls.MANDATORY_DISCLAIMER
             }
 
-        # Default intelligent response
+        # 9. GENERAL CONVERSATIONAL FALLBACK FOR ANY CHITCHAT OR QUERY
+        ans = (
+            f"### 💬 ORVEYRA Guide\n\n"
+            f"I'm happy to chat about **\"{query}\"**!\n\n"
+            "As your intelligent companion, I can converse on casual topics, science, daily wellness, creative writing, or help analyze your personal health telemetry whenever you'd like.\n\n"
+            "What else is on your mind today?"
+        )
         return {
-            "answer": (
-                f"### 💡 ORVEYRA Response for '{query}'\n\n"
-                "I'm here to assist with health pattern analysis, casual conversation, science questions, healthcare center recommendations, or doctor visit preparation.\n\n"
-                "Try asking: *'Show healthcare centers for PCOS'*, *'Find endocrinologists'*, *'Mental health clinics'*, *'Tell me a joke'*, *'Why am I tired?'*, or *'Explain my lab biomarkers'*."
-            ),
-            "grounded_records_used": timeline_context[:2],
+            "answer": ans,
+            "grounded_records_used": timeline_context[:2] if timeline_context else [],
             "confidence": "ORVEYRA PATTERN ENGINE",
             "disclaimer": cls.MANDATORY_DISCLAIMER
         }

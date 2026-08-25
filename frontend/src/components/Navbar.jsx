@@ -1,5 +1,5 @@
 import React from 'react'
-import { Activity, Clock, Network, FileText, MessageSquare, Stethoscope, Shield, Headphones, PlusCircle, LogIn, User, LogOut, KeyRound, UserCheck, Compass, ShieldAlert } from 'lucide-react'
+import { Activity, Clock, Network, FileText, MessageSquare, Stethoscope, Shield, Headphones, PlusCircle, LogIn, User, LogOut, KeyRound, UserCheck, Compass, ShieldAlert, ShieldCheck } from 'lucide-react'
 
 export default function Navbar({ activeTab, setActiveTab, user, profile, onOpenAuth, onLogout, onOpenQuickLog, onOpenProfile }) {
   const navItems = [
@@ -11,6 +11,7 @@ export default function Navbar({ activeTab, setActiveTab, user, profile, onOpenA
     { id: 'ask-timeline', label: 'Ask Timeline', icon: MessageSquare },
     { id: 'doctor-mode', label: 'Doctor Mode', icon: Stethoscope },
     { id: 'care-finder', label: 'Care Finder', icon: Compass },
+    { id: 'safety-intel', label: '🛡️ Safety Intelligence', icon: ShieldCheck },
     { id: 'immediate-help', label: '🚨 Immediate Help', icon: ShieldAlert },
     { id: 'privacy-center', label: 'Privacy Center', icon: Shield },
   ]

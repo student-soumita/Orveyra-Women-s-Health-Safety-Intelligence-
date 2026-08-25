@@ -318,3 +318,46 @@ class IncidentEvent(Base):
     incident = relationship("IncidentRecord", back_populates="events")
 
 Index("idx_event_incident_time", IncidentEvent.incident_id, IncidentEvent.event_at)
+
+
+# ---------------------------------------------------------
+# DYNAMIC SAFETY RISK ENGINE MODELS (ISOLATED & ADDITIVE)
+# ---------------------------------------------------------
+
+class SafetyRiskZone(Base):
+    """
+    Geospatial risk zones (high risk area boundaries, historical incident hotspots).
+    Used by Dynamic Risk Engine for polygon/radius calculations.
+    """
+    __tablename__ = "safety_risk_zones"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String, nullable=False)
+    risk_level = Column(String, default="ELEVATED") # ELEVATED, MODERATE, LOW
+    base_risk_weight = Column(Float, default=25.0)  # 0 to 30 weight contribution
+    center_latitude = Column(Float, nullable=False)
+    center_longitude = Column(Float, nullable=False)
+    radius_meters = Column(Float, default=500.0)
+    description = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+
+Index("idx_risk_zone_coords", SafetyRiskZone.center_latitude, SafetyRiskZone.center_longitude)
+
+
+class RiskSnapshot(Base):
+    """
+    Anonymized evaluation snapshots logged when users query safety risk assessments.
+    Used for telemetry audit & pattern updates.
+    """
+    __tablename__ = "risk_snapshots"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), index=True, nullable=True)
+    latitude = Column(Float, nullable=False)
+    longitude = Column(Float, nullable=False)
+    risk_score = Column(Integer, nullable=False)     # 0 to 100
+    risk_level = Column(String, nullable=False)      # LOW, MODERATE, ELEVATED
+    confidence_score = Column(Integer, nullable=False)# 0 to 100
+    contributing_factors_json = Column(Text, nullable=True)
+    evaluated_at = Column(DateTime, default=datetime.datetime.utcnow)
+

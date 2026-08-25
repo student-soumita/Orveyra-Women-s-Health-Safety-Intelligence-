@@ -175,6 +175,9 @@ export default function CareFinderView({ defaultSpecialty = 'all', onNavigateTab
       }).addTo(map)
 
       mapInstanceRef.current = map
+      setTimeout(() => map.invalidateSize(), 150)
+    } else {
+      setTimeout(() => { if (mapInstanceRef.current) mapInstanceRef.current.invalidateSize() }, 100)
     }
 
     return () => {
@@ -188,6 +191,7 @@ export default function CareFinderView({ defaultSpecialty = 'all', onNavigateTab
     if (!L || !mapInstanceRef.current) return
 
     const map = mapInstanceRef.current
+    setTimeout(() => map.invalidateSize(), 100)
 
     // Clear existing markers
     markersRef.current.forEach(m => map.removeLayer(m))

@@ -6,6 +6,7 @@ import {
   Shield, Zap, Edit3, Save, Eye, Lock
 } from 'lucide-react'
 
+
 // ─── Configurable emergency numbers by country ───
 const EMERGENCY_NUMBERS = {
   IN: { number: '112', label: 'Emergency Services (India)' },

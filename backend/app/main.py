@@ -19,7 +19,8 @@ from app.models.schema import (
     User, UserProfile, CycleLog, SymptomLog, LifestyleLog,
     BiomarkerLog, MedicationLog, DocumentVault, AIObservation,
     AuditLog, DoctorShareToken, CareSavedPlace, CareSearchHistory, CareShareLink,
-    TrustedContact, IncidentRecord, IncidentEvidence, IncidentEvent
+    TrustedContact, IncidentRecord, IncidentEvidence, IncidentEvent,
+    SafetyRiskZone, RiskSnapshot
 )
 from app.services.auth import (
     hash_password, verify_password, create_access_token,
@@ -31,6 +32,7 @@ from app.services.lab_parser import LabDocumentParser
 from app.services.vault import PresignedVaultService
 from app.services.doctor_mode import DoctorModeService
 from app.services.care_finder import CareFinderService
+from app.services.risk_engine import DynamicRiskEngine, RISK_THRESHOLDS
 from app.middleware.privacy import PIISanitizer
 
 # Initialize DB tables
@@ -119,6 +121,33 @@ class AskTimelineRequest(BaseModel):
 class LabVerificationRequest(BaseModel):
     verification_status: str # VERIFIED or REJECTED
     approved_fields: List[Dict[str, Any]]
+
+class SafetyRiskAssessRequest(BaseModel):
+    latitude: float
+    longitude: float
+    timestamp_override: Optional[str] = None # ISO datetime string
+    crowd_density_override: Optional[str] = None
+    lighting_override: Optional[str] = None
+
+class RouteRiskAssessRequest(BaseModel):
+    origin: Dict[str, float]      # {"lat": float, "lon": float}
+    destination: Dict[str, float] # {"lat": float, "lon": float}
+    waypoints: Optional[List[Dict[str, float]]] = None
+
+class ManualLocationAssessRequest(BaseModel):
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
+    location_name: Optional[str] = None
+    date_str: Optional[str] = None       # YYYY-MM-DD
+    time_str: Optional[str] = None       # HH:MM
+    travel_companion: Optional[str] = "alone"  # 'alone', 'friends', 'family', 'group'
+    travel_mode: Optional[str] = "walking"      # 'walking', 'public_transport', 'cab', 'car', 'bicycle'
+    travel_purpose: Optional[str] = "travel"   # 'college', 'work', 'shopping', 'entertainment', 'travel', 'other'
+    is_demo_mode: Optional[bool] = False
+
+class RouteCompareRequest(BaseModel):
+    origin: Dict[str, Any]      # {"lat": float, "lon": float, "name": str}
+    destination: Dict[str, Any] # {"lat": float, "lon": float, "name": str}
 
 # ---------------------------------------------------------
 # AUTH ENDPOINTS
@@ -1643,6 +1672,222 @@ def generate_incident_report(
         "disclaimer": "This report contains user-entered data only. It does not constitute legal advice, a diagnosis, or legal certification of evidence.",
         "incidents": report_items
     }
+
+# ---------------------------------------------------------
+# DYNAMIC SAFETY RISK ENGINE ENDPOINTS
+# ---------------------------------------------------------
+
+@app.get("/api/safety-risk/assess")
+def assess_location_safety_risk(
+    lat: float = 22.5726,
+    lon: float = 88.4331,
+    crowd: Optional[str] = None,
+    lighting: Optional[str] = None,
+    timestamp: Optional[str] = None,
+    user: Optional[User] = Depends(get_optional_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Evaluates contextual 6-factor safety risk score for a single latitude/longitude coordinate.
+    """
+    ts_dt = None
+    if timestamp:
+        try:
+            ts_dt = datetime.datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
+        except Exception:
+            pass
+
+    risk_data = DynamicRiskEngine.analyze_location_risk(
+        lat=lat,
+        lon=lon,
+        timestamp_dt=ts_dt,
+        db=db,
+        crowd_density_override=crowd,
+        lighting_override=lighting
+    )
+
+    # Log snapshot asynchronously / in DB
+    try:
+        snapshot = RiskSnapshot(
+            user_id=user.id if user else None,
+            latitude=lat,
+            longitude=lon,
+            risk_score=risk_data["risk_score"],
+            risk_level=risk_data["risk_level"],
+            confidence_score=risk_data["confidence"],
+            contributing_factors_json=json.dumps(risk_data["contributing_factors"])
+        )
+        db.add(snapshot)
+        db.commit()
+    except Exception as e:
+        print(f"[Main] Error logging risk snapshot: {e}")
+
+    return risk_data
+
+
+@app.post("/api/safety-risk/assess")
+def assess_location_safety_risk_post(
+    req: SafetyRiskAssessRequest,
+    user: Optional[User] = Depends(get_optional_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    POST evaluation for location safety risk with custom timestamp or overrides.
+    """
+    ts_dt = None
+    if req.timestamp_override:
+        try:
+            ts_dt = datetime.datetime.fromisoformat(req.timestamp_override.replace("Z", "+00:00"))
+        except Exception:
+            pass
+
+    risk_data = DynamicRiskEngine.analyze_location_risk(
+        lat=req.latitude,
+        lon=req.longitude,
+        timestamp_dt=ts_dt,
+        db=db,
+        crowd_density_override=req.crowd_density_override,
+        lighting_override=req.lighting_override
+    )
+
+    try:
+        snapshot = RiskSnapshot(
+            user_id=user.id if user else None,
+            latitude=req.latitude,
+            longitude=req.longitude,
+            risk_score=risk_data["risk_score"],
+            risk_level=risk_data["risk_level"],
+            confidence_score=risk_data["confidence"],
+            contributing_factors_json=json.dumps(risk_data["contributing_factors"])
+        )
+        db.add(snapshot)
+        db.commit()
+    except Exception as e:
+        print(f"[Main] Error logging risk snapshot POST: {e}")
+
+    return risk_data
+
+
+@app.post("/api/safety-risk/route-assess")
+def assess_route_safety_risk(
+    req: RouteRiskAssessRequest,
+    user: Optional[User] = Depends(get_optional_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Evaluates segment-by-segment route risk and identifies highest-risk section.
+    """
+    if not req.origin or not req.destination:
+        raise HTTPException(status_code=400, detail="Origin and Destination coordinates are required.")
+
+    route_eval = DynamicRiskEngine.analyze_route_risk(
+        origin=req.origin,
+        destination=req.destination,
+        waypoints=req.waypoints,
+        db=db
+    )
+    return route_eval
+
+
+@app.get("/api/safety-risk/zones")
+def get_safety_risk_zones(db: Session = Depends(get_db)):
+    """
+    Returns spatial risk zones for map visualization overlays.
+    """
+    zones = db.query(SafetyRiskZone).all()
+    if not zones:
+        return {"risk_zones": DynamicRiskEngine.DEFAULT_RISK_ZONES}
+    return {
+        "risk_zones": [
+            {
+                "id": z.id,
+                "name": z.name,
+                "lat": z.center_latitude,
+                "lon": z.center_longitude,
+                "radius_m": z.radius_meters,
+                "risk_level": z.risk_level,
+                "weight": z.base_risk_weight,
+                "description": z.description
+            }
+            for z in zones
+        ]
+    }
+
+
+@app.get("/api/safety-risk/config")
+def get_safety_risk_config():
+    """
+    Returns centralized risk threshold configuration.
+    """
+    return {
+        "thresholds": RISK_THRESHOLDS,
+        "factors": ["Location", "Time", "Crowd Density", "Lighting", "Reported Incidents", "Route Conditions"]
+    }
+
+
+@app.get("/api/safety-risk/geocode")
+def geocode_safety_location(q: str = ""):
+    """
+    Geocodes place names, landmarks, addresses, PIN codes, or coordinate strings.
+    """
+    return DynamicRiskEngine.geocode_location(q)
+
+
+@app.post("/api/safety-risk/manual-analyze")
+def analyze_manual_safety_location(
+    req: ManualLocationAssessRequest,
+    user: Optional[User] = Depends(get_optional_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Evaluates multi-dimensional manual location safety risk (7 dimensions, spatial radii,
+    24h hourly timeline curve, dynamic explainability, and confidence scoring).
+    Does NOT require continuous GPS tracking.
+    """
+    # Geocode if location_name provided without lat/lon
+    lat = req.latitude
+    lon = req.longitude
+    loc_name = req.location_name
+
+    if (lat is None or lon is None) and loc_name:
+        geo = DynamicRiskEngine.geocode_location(loc_name)
+        lat = geo["latitude"]
+        lon = geo["longitude"]
+        loc_name = geo["name"]
+
+    if lat is None or lon is None:
+        lat, lon = 22.5726, 88.4331
+        loc_name = "Sector V, Salt Lake"
+
+    result = DynamicRiskEngine.analyze_manual_location(
+        lat=lat,
+        lon=lon,
+        location_name=loc_name,
+        date_str=req.date_str,
+        time_str=req.time_str,
+        travel_companion=req.travel_companion or "alone",
+        travel_mode=req.travel_mode or "walking",
+        travel_purpose=req.travel_purpose or "travel",
+        is_demo_mode=req.is_demo_mode or False,
+        db=db
+    )
+    return result
+
+
+@app.post("/api/safety-risk/route-compare")
+def compare_routes_safety(
+    req: RouteCompareRequest,
+    db: Session = Depends(get_db)
+):
+    """
+    Compares Fastest Route vs Safer Route vs Balanced Route with explicit risk & time trade-offs.
+    """
+    if not req.origin or not req.destination:
+        raise HTTPException(status_code=400, detail="Origin and Destination coordinates are required.")
+
+    return DynamicRiskEngine.compare_routes(req.origin, req.destination, db=db)
+
+
 
 # ---------------------------------------------------------
 # PRODUCTION CLOUD DEPLOYMENT STATIC FRONTEND ROUTER
