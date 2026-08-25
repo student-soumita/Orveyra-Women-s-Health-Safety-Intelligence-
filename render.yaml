@@ -5,9 +5,18 @@ services:
     dockerfilePath: Dockerfile
     plan: free
     envVars:
+      - key: GEMINI_API_KEY
+        sync: false
+        # Set this in Render UI – your Gemini API key
       - key: SECRET_KEY
         generateValue: true
       - key: ALGORITHM
         value: HS256
       - key: ACCESS_TOKEN_EXPIRE_MINUTES
         value: "1440"
+      - key: STORAGE_VAULT_SECRET
+        generateValue: true
+        # Used for presigned vault URLs – keep the generated value secret
+      - key: DATABASE_URL
+        # Optional: Provide a persistent DB URL (e.g., PostgreSQL) or leave empty for SQLite
+        value: "sqlite:///./orveyra.db"

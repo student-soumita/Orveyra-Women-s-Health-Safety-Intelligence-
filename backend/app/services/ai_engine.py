@@ -79,23 +79,20 @@ class AIEngine:
     )
 
     _client = None
-    _configured_key = None
-    _active_model = "models/gemini-3.6-flash"
-    _model_name = "gemini-3.6-flash"  # Alias for main.py compatibility — do not rename
+    _active_model = "gemini-2.5-flash"
+    _model_name = "gemini-2.5-flash"  # Alias for main.py compatibility — do not rename
 
-    # Priority order: confirmed working models first, versioned fallbacks after
+    # Priority order: standard production models first, versioned fallbacks after
     CANDIDATE_MODELS = [
-        "models/gemini-3.6-flash",
+        "gemini-2.5-flash",
+        "gemini-2.0-flash",
+        "gemini-1.5-flash",
+        "gemini-1.5-pro",
+        "gemini-flash-latest",
+        "models/gemini-2.5-flash",
         "models/gemini-2.0-flash",
         "models/gemini-1.5-flash",
-        "models/gemini-flash-latest",
-        "models/gemini-flash-lite-latest",
-        "models/gemini-2.5-flash",
-        "models/gemini-pro-latest",
-        "models/gemini-3.5-flash",
-        "models/gemini-3.7-flash",
-        "models/gemini-3.1-flash-lite",
-        "models/gemma-4-26b-a4b-it"
+        "models/gemini-1.5-pro"
     ]
 
     @classmethod
