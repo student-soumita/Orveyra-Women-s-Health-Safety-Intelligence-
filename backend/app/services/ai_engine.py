@@ -97,16 +97,8 @@ class AIEngine:
 
     @classmethod
     def _get_client(cls):
-        """Initializes and returns configured client.
-
-        NOTE: we deliberately do NOT call load_dotenv(override=True) here.
-        In production (Render/Vercel) GEMINI_API_KEY should be a real platform
-        environment variable. Re-loading a .env file on every call and forcing
-        it to override os.environ can silently wipe out that correctly-set
-        platform variable if any stray .env file exists in the deployed
-        container. .env is loaded once at import time for local dev; runtime
-        updates go through os.environ directly (see main.py set-key endpoint).
-        """
+        """Initializes and returns configured client."""
+        load_dotenv(override=True)
         api_key = os.getenv("GEMINI_API_KEY", "").strip()
 
         if not api_key or api_key == "your_api_key_here" or not GENAI_AVAILABLE:
