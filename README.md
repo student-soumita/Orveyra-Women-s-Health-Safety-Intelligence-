@@ -542,6 +542,57 @@ Instead, ORVEYRA should communicate in terms such as:
 > **Missing context**
 
 > **Discuss with a healthcare professional**
+# 🛣️ Safe Route
+
+ORVEYRA includes an optional **Safe Route** feature to help users plan journeys with safety-aware route information.
+
+Users can:
+
+* Enter a destination
+* Compare available routes
+* View route distance and estimated travel time
+* Identify routes with available safety-related information
+* Access nearby healthcare and support points along the journey
+* Open navigation through a supported mapping service
+
+### Safety-Aware Routing
+
+Where reliable data is available, ORVEYRA can consider contextual information such as:
+
+* Time of travel
+* Road/route conditions
+* Nearby support facilities
+* User-reported safety information
+* Available public locations
+
+The feature is designed to **assist decision-making**, not guarantee that a route is completely safe.
+
+ORVEYRA does not claim:
+
+> “This route is 100% safe.”
+
+Instead, it helps the user make a more informed route choice.
+
+### Connected Safety Journey
+
+```text
+Choose Destination
+        ↓
+Compare Routes
+        ↓
+Review Safety Context
+        ↓
+Select Preferred Route
+        ↓
+Navigate
+        ↓
+Immediate Help if Needed
+```
+
+Safe Route works alongside ORVEYRA's existing **Care Finder** and **Immediate Help** features to create a broader safety journey:
+
+> **Plan → Travel → Find Support → Get Immediate Help**
+
 
 ---
 
