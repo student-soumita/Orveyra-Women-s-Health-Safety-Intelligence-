@@ -734,9 +734,16 @@ def ask_timeline(req: AskTimelineRequest, user: User = Depends(get_current_user)
 class SetKeyRequest(BaseModel):
     api_key: str
 
+def _running_on_ephemeral_host() -> bool:
+    """Best-effort detection of Render / Vercel / other stateless hosts, where a
+    file written to local disk at runtime will not survive a restart, redeploy,
+    or (on serverless) the next invocation."""
+    return bool(
+        os.getenv("RENDER") or os.getenv("VERCEL") or os.getenv("AWS_LAMBDA_FUNCTION_NAME")
+    )
+
 @app.get("/api/ai/status")
 def get_ai_status(user: User = Depends(get_current_user)):
-    load_dotenv()
     key = os.getenv("GEMINI_API_KEY", "").strip()
     is_active = bool(key and key != "your_gemini_api_key_here")
     return {
@@ -746,26 +753,53 @@ def get_ai_status(user: User = Depends(get_current_user)):
 
 @app.post("/api/ai/set-key")
 def set_gemini_api_key(req: SetKeyRequest, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    """Set Gemini API key at runtime (stored in process env and saved to .env)."""
+    """Set Gemini API key at runtime (process env for this instance, plus a best-effort
+    .env write for local dev). On Render/Vercel this does NOT persist across a restart,
+    redeploy, or cold start — the key must be set as a real platform environment
+    variable for it to survive. We tell the caller that explicitly instead of letting
+    it silently disappear later."""
     new_key = req.api_key.strip()
     os.environ["GEMINI_API_KEY"] = new_key
-    env_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".env")
-    try:
-        with open(env_path, "w") as f:
-            f.write(f"GEMINI_API_KEY={new_key}\n")
-    except Exception as e:
-        print(f"[Main] Error writing to .env: {e}")
+
+    ephemeral = _running_on_ephemeral_host()
+    persisted_to_disk = False
+    if not ephemeral:
+        env_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".env")
+        try:
+            with open(env_path, "w") as f:
+                f.write(f"GEMINI_API_KEY={new_key}\n")
+            persisted_to_disk = True
+        except Exception as e:
+            print(f"[Main] Error writing to .env: {e}")
 
     # Force re-initialization of the client
     AIEngine._configured_key = None
     AIEngine._client = None
-    
+
     client = AIEngine._get_model()
     log_audit(db, user.id, "SET_GEMINI_API_KEY")
-    if client:
-        return {"message": f"Google Gemini API connected successfully (model: {AIEngine._model_name})!", "connected": True, "model": AIEngine._model_name}
-    else:
+
+    if not client:
         return {"message": "API key saved, but Gemini connection failed. Please check key validity.", "connected": False}
+
+    if ephemeral:
+        return {
+            "message": (
+                f"Connected for this session (model: {AIEngine._model_name}). "
+                "This host's filesystem is ephemeral, so the key will be lost on the next "
+                "restart or redeploy — set GEMINI_API_KEY as an environment variable in your "
+                "hosting platform's dashboard for a permanent fix."
+            ),
+            "connected": True,
+            "model": AIEngine._model_name,
+            "persistent": False,
+        }
+    return {
+        "message": f"Google Gemini API connected successfully (model: {AIEngine._model_name})!",
+        "connected": True,
+        "model": AIEngine._model_name,
+        "persistent": persisted_to_disk,
+    }
 
 @app.post("/api/ai/clear-chat")
 def clear_chat_memory(user: User = Depends(get_current_user)):
@@ -1907,4 +1941,3 @@ if os.path.exists(DIST_DIR):
         if os.path.exists(target_file) and os.path.isfile(target_file):
             return FileResponse(target_file)
         return FileResponse(os.path.join(DIST_DIR, "index.html"))
-
