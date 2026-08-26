@@ -80,20 +80,24 @@ class AIEngine:
 
     _client = None
     _configured_key = None
-    _active_model = "gemini-2.5-flash"
-    _model_name = "gemini-2.5-flash"  # Alias for main.py compatibility — do not rename
+    _active_model = "gemini-3.5-flash"
+    _model_name = "gemini-3.5-flash"  # Alias for main.py compatibility — do not rename
 
-    # Priority order: standard production models first, versioned fallbacks after
+    # Priority order: current Gemini 3.x models first (the 2.5/2.0/1.5 model IDs below
+    # now return 404 "no longer available to new users" for any newly created API key —
+    # this is a hard Google-side block, not a bug in this app). gemini-flash-latest is
+    # kept as a last-resort alias since it can hit transient 503s under high demand.
     CANDIDATE_MODELS = [
+        "gemini-3.5-flash",
+        "gemini-3.1-flash-lite",
+        "gemini-3.6-flash",
+        "gemini-3-flash",
         "gemini-2.5-flash",
+        "gemini-2.5-flash-lite",
+        "gemini-flash-latest",
         "gemini-2.0-flash",
         "gemini-1.5-flash",
         "gemini-1.5-pro",
-        "gemini-flash-latest",
-        "models/gemini-2.5-flash",
-        "models/gemini-2.0-flash",
-        "models/gemini-1.5-flash",
-        "models/gemini-1.5-pro"
     ]
 
     @classmethod
